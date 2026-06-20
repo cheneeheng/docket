@@ -1,6 +1,3 @@
-# Agent workspace (decision logs, scratch)
-.agents_workspace/
-
 # OS / editor
 Thumbs.db
 .DS_Store
