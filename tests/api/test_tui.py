@@ -1,4 +1,5 @@
 """TUI tests driven through Textual's async test harness (subprocess mocked)."""
+
 from __future__ import annotations
 
 import json
@@ -7,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from docket import core, tracker, tui
-from docket.tui import DocketApp, InstructionModal
+from docket.tui import DocketApp
 from tests.conftest import write_plan
 
 
@@ -17,8 +18,10 @@ def tui_registry(project, tmp_path):
     write_plan(project, "alpha", "---\ntitle: Alpha\n---\n# body\n")
     write_plan(project, "beta")
     reg = tmp_path / "projects.json"
-    reg.write_text(json.dumps({"projects": [{"name": "repo", "path": project.path}]}),
-                   encoding="utf-8")
+    reg.write_text(
+        json.dumps({"projects": [{"name": "repo", "path": project.path}]}),
+        encoding="utf-8",
+    )
     return str(reg), project
 
 
@@ -36,10 +39,12 @@ def _ok_run(returncode=0, raises=None):
         if raises:
             raise raises
         yield f"▸ work on {slug}"
+
     return fake
 
 
 # --- mount --------------------------------------------------------------------
+
 
 async def test_mount_populates_tree_and_resets_stale(tui_registry):
     reg, project = tui_registry
@@ -55,7 +60,9 @@ async def test_mount_populates_tree_and_resets_stale(tui_registry):
 
 async def test_mount_empty_shows_no_projects(monkeypatch):
     monkeypatch.setattr(core, "load_registry", lambda registry: [])
-    monkeypatch.setattr(core, "registry_search_paths", lambda registry: ["/a/projects.json"])
+    monkeypatch.setattr(
+        core, "registry_search_paths", lambda registry: ["/a/projects.json"]
+    )
     app = DocketApp(registry=None)
     async with app.run_test():
         labels = [str(n.label) for n in app.query_one("#tree", tui.Tree).root.children]
@@ -65,11 +72,14 @@ async def test_mount_empty_shows_no_projects(monkeypatch):
 
 # --- plan selection -----------------------------------------------------------
 
+
 async def test_select_plan_renders_body(tui_registry):
     reg, _ = tui_registry
     app = DocketApp(registry=reg)
     async with app.run_test():
-        app.on_tree_node_selected(SimpleNamespace(node=SimpleNamespace(data=("repo", "alpha"))))
+        app.on_tree_node_selected(
+            SimpleNamespace(node=SimpleNamespace(data=("repo", "alpha")))
+        )
         view = app.query_one("#plan-view", tui.Static)
         assert "Alpha" in str(view.render())
 
@@ -87,11 +97,14 @@ async def test_select_missing_plan_logs(tui_registry, monkeypatch):
     app = DocketApp(registry=reg)
     async with app.run_test():
         msgs = _log_spy(app, monkeypatch)
-        app.on_tree_node_selected(SimpleNamespace(node=SimpleNamespace(data=("repo", "ghost"))))
+        app.on_tree_node_selected(
+            SimpleNamespace(node=SimpleNamespace(data=("repo", "ghost")))
+        )
         assert any("ghost" in m for m in msgs)
 
 
 # --- manual actions -----------------------------------------------------------
+
 
 async def test_run_myself_copies_and_logs(tui_registry, monkeypatch):
     reg, _ = tui_registry
@@ -171,13 +184,16 @@ async def test_toggle_select_adds_and_removes(tui_registry):
 
 # --- headless run (worker) ----------------------------------------------------
 
+
 async def test_implement_modal_enter_runs(tui_registry, monkeypatch):
     reg, _ = tui_registry
     app = DocketApp(registry=reg)
     captured = {}
     async with app.run_test() as pilot:
         app._current = ("repo", "alpha")
-        monkeypatch.setattr(app, "_run_batch", lambda items: captured.setdefault("items", items))
+        monkeypatch.setattr(
+            app, "_run_batch", lambda items: captured.setdefault("items", items)
+        )
         app.action_implement()
         await pilot.pause()
         await pilot.press("enter")  # submit the pre-filled instruction
@@ -191,7 +207,9 @@ async def test_implement_modal_escape_cancels(tui_registry, monkeypatch):
     called = {"n": 0}
     async with app.run_test() as pilot:
         app._current = ("repo", "alpha")
-        monkeypatch.setattr(app, "_run_batch", lambda items: called.__setitem__("n", called["n"] + 1))
+        monkeypatch.setattr(
+            app, "_run_batch", lambda items: called.__setitem__("n", called["n"] + 1)
+        )
         app.action_implement()
         await pilot.pause()
         await pilot.press("escape")
@@ -221,7 +239,9 @@ async def test_implement_selected_submits_batch(tui_registry, monkeypatch):
     captured = {}
     async with app.run_test():
         app._selected = {("repo", "alpha"), ("repo", "beta")}
-        monkeypatch.setattr(app, "_run_batch", lambda items: captured.setdefault("items", items))
+        monkeypatch.setattr(
+            app, "_run_batch", lambda items: captured.setdefault("items", items)
+        )
         app.action_implement_selected()
         assert len(captured["items"]) == 2
         assert app._selected == set()
@@ -259,12 +279,15 @@ async def test_run_batch_exception_breaks(tui_registry, monkeypatch):
 
 # --- stop ---------------------------------------------------------------------
 
+
 async def test_stop_with_active_proc(tui_registry, monkeypatch):
     reg, _ = tui_registry
     app = DocketApp(registry=reg)
     async with app.run_test():
         msgs = _log_spy(app, monkeypatch)
-        proc = SimpleNamespace(terminated=False, terminate=lambda: setattr(proc, "terminated", True))
+        proc = SimpleNamespace(
+            terminated=False, terminate=lambda: setattr(proc, "terminated", True)
+        )
         app._proc = proc
         app.action_stop()
         assert proc.terminated
@@ -281,6 +304,7 @@ async def test_stop_without_proc(tui_registry, monkeypatch):
 
 
 # --- run_tui entry point ------------------------------------------------------
+
 
 def test_run_tui_invokes_app_run(monkeypatch):
     monkeypatch.setattr(DocketApp, "run", lambda self: None)

@@ -1,4 +1,5 @@
 """Unit tests for CLI dispatch."""
+
 import docket.__main__ as main_mod
 
 

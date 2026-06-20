@@ -1,4 +1,5 @@
 """API tests: drive the real stdlib server over loopback HTTP."""
+
 from __future__ import annotations
 
 import json
@@ -18,8 +19,10 @@ def live_server(project, tmp_path, monkeypatch):
     """A running ThreadingHTTPServer bound to an ephemeral loopback port."""
     write_plan(project, "alpha", "---\ntitle: Alpha\n---\n# body\n")
     reg = tmp_path / "projects.json"
-    reg.write_text(json.dumps({"projects": [{"name": "repo", "path": project.path}]}),
-                   encoding="utf-8")
+    reg.write_text(
+        json.dumps({"projects": [{"name": "repo", "path": project.path}]}),
+        encoding="utf-8",
+    )
     # never spawn a real claude during these tests
     monkeypatch.setattr(core, "run_implement", _instant_run)
 
@@ -36,6 +39,7 @@ def live_server(project, tmp_path, monkeypatch):
 
 def _instant_run(project, slug, instruction, *, on_spawn=None, run_id=None):
     from types import SimpleNamespace
+
     if on_spawn:
         on_spawn(SimpleNamespace(returncode=0))
     yield "▸ Edit alpha.py"
@@ -53,8 +57,12 @@ def _get_raw(base, path):
 
 
 def _post(base, path, body):
-    req = urllib.request.Request(base + path, data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json"}, method="POST")
+    req = urllib.request.Request(
+        base + path,
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     with urllib.request.urlopen(req) as r:
         return r.status, json.loads(r.read())
 
@@ -68,6 +76,7 @@ def _expect_error(fn):
 
 
 # --- static -------------------------------------------------------------------
+
 
 def test_index_html(live_server):
     base, *_ = live_server
@@ -93,11 +102,13 @@ def test_static_missing_is_404(live_server):
 def test_static_traversal_blocked(live_server):
     base, *_ = live_server
     code, _ = _expect_error(
-        lambda: urllib.request.urlopen(base + "/static/..%2f..%2fpyproject.toml"))
+        lambda: urllib.request.urlopen(base + "/static/..%2f..%2fpyproject.toml")
+    )
     assert code == 404
 
 
 # --- read endpoints -----------------------------------------------------------
+
 
 def test_api_projects(live_server):
     base, *_ = live_server
@@ -117,21 +128,24 @@ def test_api_plan(live_server):
 def test_api_plan_unknown_project(live_server):
     base, *_ = live_server
     code, data = _expect_error(
-        lambda: urllib.request.urlopen(base + "/api/plan?project=ghost&slug=alpha"))
+        lambda: urllib.request.urlopen(base + "/api/plan?project=ghost&slug=alpha")
+    )
     assert code == 404
 
 
 def test_api_plan_bad_slug(live_server):
     base, *_ = live_server
     code, _ = _expect_error(
-        lambda: urllib.request.urlopen(base + "/api/plan?project=repo&slug=../x"))
+        lambda: urllib.request.urlopen(base + "/api/plan?project=repo&slug=../x")
+    )
     assert code == 400
 
 
 def test_api_plan_missing_file(live_server):
     base, *_ = live_server
     code, _ = _expect_error(
-        lambda: urllib.request.urlopen(base + "/api/plan?project=repo&slug=ghost"))
+        lambda: urllib.request.urlopen(base + "/api/plan?project=repo&slug=ghost")
+    )
     assert code == 404
 
 
@@ -150,14 +164,16 @@ def test_api_runcmd(live_server):
 def test_api_runcmd_unknown_project(live_server):
     base, *_ = live_server
     code, _ = _expect_error(
-        lambda: urllib.request.urlopen(base + "/api/runcmd?project=ghost&slug=alpha"))
+        lambda: urllib.request.urlopen(base + "/api/runcmd?project=ghost&slug=alpha")
+    )
     assert code == 404
 
 
 def test_api_runcmd_bad_slug(live_server):
     base, *_ = live_server
     code, _ = _expect_error(
-        lambda: urllib.request.urlopen(base + "/api/runcmd?project=repo&slug=.."))
+        lambda: urllib.request.urlopen(base + "/api/runcmd?project=repo&slug=..")
+    )
     assert code == 400
 
 
@@ -179,6 +195,7 @@ def test_registry_error_is_500(live_server, tmp_path):
 
 # --- manual transitions -------------------------------------------------------
 
+
 def test_mark_implemented_and_reopen(live_server):
     base, *_ = live_server
     status, data = _post(base, "/api/implemented", {"project": "repo", "slug": "alpha"})
@@ -191,28 +208,35 @@ def test_mark_implemented_conflict(live_server):
     base, *_ = live_server
     _post(base, "/api/implemented", {"project": "repo", "slug": "alpha"})
     code, data = _expect_error(
-        lambda: _post(base, "/api/implemented", {"project": "repo", "slug": "alpha"}))
+        lambda: _post(base, "/api/implemented", {"project": "repo", "slug": "alpha"})
+    )
     assert code == 409
 
 
 def test_manual_unknown_project(live_server):
     base, *_ = live_server
     code, _ = _expect_error(
-        lambda: _post(base, "/api/implemented", {"project": "ghost", "slug": "alpha"}))
+        lambda: _post(base, "/api/implemented", {"project": "ghost", "slug": "alpha"})
+    )
     assert code == 404
 
 
 def test_manual_bad_slug(live_server):
     base, *_ = live_server
     code, _ = _expect_error(
-        lambda: _post(base, "/api/implemented", {"project": "repo", "slug": ".."}))
+        lambda: _post(base, "/api/implemented", {"project": "repo", "slug": ".."})
+    )
     assert code == 400
 
 
 def test_malformed_json_body(live_server):
     base, *_ = live_server
-    req = urllib.request.Request(base + "/api/implemented", data=b"{bad",
-                                 headers={"Content-Type": "application/json"}, method="POST")
+    req = urllib.request.Request(
+        base + "/api/implemented",
+        data=b"{bad",
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     code, data = _expect_error(lambda: urllib.request.urlopen(req))
     assert code == 400
 
@@ -230,11 +254,13 @@ def test_post_registry_error_is_500(live_server, tmp_path):
     bad.write_text(json.dumps("not a dict"), encoding="utf-8")
     httpd.registry_path = str(bad)
     code, data = _expect_error(
-        lambda: _post(base, "/api/implemented", {"project": "repo", "slug": "alpha"}))
+        lambda: _post(base, "/api/implemented", {"project": "repo", "slug": "alpha"})
+    )
     assert code == 500
 
 
 # --- implement + stream + stop ------------------------------------------------
+
 
 def test_implement_empty_items(live_server):
     base, *_ = live_server
@@ -245,14 +271,18 @@ def test_implement_empty_items(live_server):
 def test_implement_invalid_item(live_server):
     base, *_ = live_server
     code, _ = _expect_error(
-        lambda: _post(base, "/api/implement", {"items": [{"project": "ghost", "slug": "alpha"}]}))
+        lambda: _post(
+            base, "/api/implement", {"items": [{"project": "ghost", "slug": "alpha"}]}
+        )
+    )
     assert code == 409
 
 
 def test_implement_and_stream(live_server):
     base, *_ = live_server
-    status, data = _post(base, "/api/implement",
-                         {"items": [{"project": "repo", "slug": "alpha"}]})
+    status, data = _post(
+        base, "/api/implement", {"items": [{"project": "repo", "slug": "alpha"}]}
+    )
     run_id = data["runs"][0]["run_id"]
     body = _read_stream(base, run_id)
     assert "▸ Edit alpha.py" in body
@@ -262,7 +292,8 @@ def test_implement_and_stream(live_server):
 def test_stream_unknown_run_404(live_server):
     base, *_ = live_server
     code, _ = _expect_error(
-        lambda: urllib.request.urlopen(base + "/api/stream?run_id=ghost"))
+        lambda: urllib.request.urlopen(base + "/api/stream?run_id=ghost")
+    )
     assert code == 404
 
 

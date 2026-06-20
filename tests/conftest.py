@@ -1,4 +1,5 @@
 """Shared fixtures for the docket test suite."""
+
 from __future__ import annotations
 
 import json
@@ -47,10 +48,15 @@ def plan_file(project) -> str:
 def registry_file(tmp_path, project) -> str:
     """A projects.json registry referencing `project`; returns its path."""
     reg = tmp_path / "projects.json"
-    reg.write_text(json.dumps({
-        "instruction_template": "Implement {path} now.",
-        "projects": [{"name": project.name, "path": project.path}],
-    }), encoding="utf-8")
+    reg.write_text(
+        json.dumps(
+            {
+                "instruction_template": "Implement {path} now.",
+                "projects": [{"name": project.name, "path": project.path}],
+            }
+        ),
+        encoding="utf-8",
+    )
     return str(reg)
 
 
@@ -101,6 +107,7 @@ class _FakeStdout:
 @pytest.fixture
 def fake_popen_factory(monkeypatch):
     """Patch core.subprocess.Popen to return a FakeProc with given output/rc."""
+
     def install(lines, returncode=0):
         captured = {}
 

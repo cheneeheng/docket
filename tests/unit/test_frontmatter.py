@@ -1,4 +1,5 @@
 """Unit tests for the read-only frontmatter reader."""
+
 from docket import frontmatter
 
 

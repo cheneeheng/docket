@@ -3,6 +3,7 @@
 No web framework, no build step. Binds to 127.0.0.1 only — that is the auth story for a
 single-user local tool: not reachable off-box.
 """
+
 from __future__ import annotations
 
 import json
@@ -64,7 +65,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/":
                 return self._serve_static("index.html")
             if path.startswith("/static/"):
-                return self._serve_static(path[len("/static/"):])
+                return self._serve_static(path[len("/static/") :])
             if path == "/api/projects":
                 return self._api_projects()
             if path == "/api/plan":
@@ -108,7 +109,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "not found"}, 404)
         data = target.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", _CONTENT_TYPES.get(target.suffix, "application/octet-stream"))
+        self.send_header(
+            "Content-Type",
+            _CONTENT_TYPES.get(target.suffix, "application/octet-stream"),
+        )
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -122,8 +126,10 @@ class Handler(BaseHTTPRequestHandler):
     def _api_projects(self):
         out = []
         for project in self._projects():
-            plans = [{"slug": p.slug, "title": p.title, "status": p.status}
-                     for p in core.list_plans(project)]
+            plans = [
+                {"slug": p.slug, "title": p.title, "status": p.status}
+                for p in core.list_plans(project)
+            ]
             out.append({"name": project.name, "path": project.path, "plans": plans})
         self._send_json({"projects": out})
 
@@ -140,10 +146,16 @@ class Handler(BaseHTTPRequestHandler):
             plan = core.read_plan(project, slug)
         except FileNotFoundError as exc:
             return self._send_json({"error": str(exc)}, 404)
-        self._send_json({
-            "project": plan.project, "slug": plan.slug, "title": plan.title,
-            "status": plan.status, "body": plan.body, "history": plan.history,
-        })
+        self._send_json(
+            {
+                "project": plan.project,
+                "slug": plan.slug,
+                "title": plan.title,
+                "status": plan.status,
+                "body": plan.body,
+                "history": plan.history,
+            }
+        )
 
     def _api_runcmd(self, qs):
         project = self._find_project(qs.get("project", [""])[0])
@@ -180,10 +192,19 @@ class Handler(BaseHTTPRequestHandler):
             runs = self.manager.submit(items)
         except ValueError as exc:
             return self._send_json({"error": str(exc)}, 409)
-        self._send_json({"runs": [
-            {"project": r.project, "slug": r.slug, "run_id": r.run_id, "state": r.state}
-            for r in runs
-        ]})
+        self._send_json(
+            {
+                "runs": [
+                    {
+                        "project": r.project,
+                        "slug": r.slug,
+                        "run_id": r.run_id,
+                        "state": r.state,
+                    }
+                    for r in runs
+                ]
+            }
+        )
 
     def _api_stop(self, body):
         run_id = body.get("run_id", "")

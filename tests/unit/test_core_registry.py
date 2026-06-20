@@ -1,6 +1,6 @@
 """Unit tests for core registry loading + search-path resolution."""
+
 import json
-from pathlib import Path
 
 import pytest
 
@@ -9,7 +9,9 @@ from docket import core
 
 def test_no_registry_returns_empty(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)  # no ./projects.json here
-    monkeypatch.setattr(core.os.path, "expanduser", lambda p: p.replace("~", str(tmp_path)))
+    monkeypatch.setattr(
+        core.os.path, "expanduser", lambda p: p.replace("~", str(tmp_path))
+    )
     assert core.load_registry(None) == []
 
 
@@ -31,10 +33,22 @@ def test_load_via_env_var(monkeypatch, registry_file):
 
 def test_load_full_entry_fields(tmp_path, project):
     reg = tmp_path / "r.json"
-    reg.write_text(json.dumps({"projects": [{
-        "name": "x", "path": project.path,
-        "allowed_tools": ["Read"], "model": "claude-sonnet-4-6", "max_turns": 40,
-    }]}), encoding="utf-8")
+    reg.write_text(
+        json.dumps(
+            {
+                "projects": [
+                    {
+                        "name": "x",
+                        "path": project.path,
+                        "allowed_tools": ["Read"],
+                        "model": "claude-sonnet-4-6",
+                        "max_turns": 40,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     p = core.load_registry(str(reg))[0]
     assert p.allowed_tools == ["Read"]
     assert p.model == "claude-sonnet-4-6"
@@ -58,10 +72,17 @@ def test_missing_name(tmp_path, project):
 
 def test_duplicate_name(tmp_path, project):
     reg = tmp_path / "r.json"
-    reg.write_text(json.dumps({"projects": [
-        {"name": "dup", "path": project.path},
-        {"name": "dup", "path": project.path},
-    ]}), encoding="utf-8")
+    reg.write_text(
+        json.dumps(
+            {
+                "projects": [
+                    {"name": "dup", "path": project.path},
+                    {"name": "dup", "path": project.path},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="duplicate project name"):
         core.load_registry(str(reg))
 
@@ -75,8 +96,15 @@ def test_missing_path(tmp_path):
 
 def test_path_not_a_directory(tmp_path):
     reg = tmp_path / "r.json"
-    reg.write_text(json.dumps({"projects": [
-        {"name": "x", "path": str(tmp_path / "nope")},
-    ]}), encoding="utf-8")
+    reg.write_text(
+        json.dumps(
+            {
+                "projects": [
+                    {"name": "x", "path": str(tmp_path / "nope")},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="not a directory"):
         core.load_registry(str(reg))

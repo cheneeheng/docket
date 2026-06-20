@@ -1,5 +1,6 @@
 """White-box tests for server branches not reachable over a clean socket:
 SSE keepalive/multiline framing, client-disconnect handling, and run_server()."""
+
 from __future__ import annotations
 
 import json
@@ -39,6 +40,7 @@ def _handler(wfile, manager=None, registry_path=None):
 
 # --- SSE framing (keepalive + multiline data + end) ---------------------------
 
+
 def test_api_stream_frames_keepalive_multiline_and_end():
     events = iter([("keepalive", None), ("data", "first\nsecond"), ("end", "done")])
     manager = SimpleNamespace(stream=lambda rid: events)
@@ -68,6 +70,7 @@ def test_do_get_broken_pipe_is_swallowed():
 
 # --- _api_stop branches -------------------------------------------------------
 
+
 def test_api_stop_success():
     manager = SimpleNamespace(stop=lambda rid: None)
     wfile = FakeWfile()
@@ -87,6 +90,7 @@ def test_api_stop_not_stoppable_is_409():
 
 
 # --- run_server lifecycle -----------------------------------------------------
+
 
 class FakeHTTPD:
     instances: list["FakeHTTPD"] = []
@@ -111,12 +115,16 @@ def fake_httpd(monkeypatch):
     return FakeHTTPD
 
 
-def test_run_server_with_projects_and_stale_reset(fake_httpd, project, tmp_path, capsys):
+def test_run_server_with_projects_and_stale_reset(
+    fake_httpd, project, tmp_path, capsys
+):
     write_plan(project, "alpha")
     tracker.set_status(project, "alpha", "running", trigger="headless")  # stale
     reg = tmp_path / "projects.json"
-    reg.write_text(json.dumps({"projects": [{"name": "repo", "path": project.path}]}),
-                   encoding="utf-8")
+    reg.write_text(
+        json.dumps({"projects": [{"name": "repo", "path": project.path}]}),
+        encoding="utf-8",
+    )
     rc = server.run_server(port=0, registry=str(reg))
     assert rc == 0
     assert fake_httpd.instances[0].closed
@@ -125,9 +133,13 @@ def test_run_server_with_projects_and_stale_reset(fake_httpd, project, tmp_path,
     assert "shutting down" in out
 
 
-def test_run_server_no_projects_prints_search_paths(fake_httpd, monkeypatch, tmp_path, capsys):
+def test_run_server_no_projects_prints_search_paths(
+    fake_httpd, monkeypatch, tmp_path, capsys
+):
     monkeypatch.chdir(tmp_path)  # no ./projects.json
-    monkeypatch.setattr(core.os.path, "expanduser", lambda p: p.replace("~", str(tmp_path)))
+    monkeypatch.setattr(
+        core.os.path, "expanduser", lambda p: p.replace("~", str(tmp_path))
+    )
     rc = server.run_server(port=0, registry=None)
     assert rc == 0
     out = capsys.readouterr().out

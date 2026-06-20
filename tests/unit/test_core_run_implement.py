@@ -1,4 +1,5 @@
 """Unit tests for the headless run generator (subprocess mocked)."""
+
 import pytest
 
 from docket import core, tracker
@@ -15,7 +16,9 @@ def test_run_implement_success_flips_to_implemented(project, fake_popen_factory)
     write_plan(project, "alpha")
     captured = fake_popen_factory(OK_EVENTS, returncode=0)
     spawned = []
-    lines = list(core.run_implement(project, "alpha", "instr-text", on_spawn=spawned.append))
+    lines = list(
+        core.run_implement(project, "alpha", "instr-text", on_spawn=spawned.append)
+    )
 
     assert spawned, "on_spawn must receive the proc handle"
     assert captured["proc"].stdin.written == "instr-text"

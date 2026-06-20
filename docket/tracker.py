@@ -3,6 +3,7 @@
 One JSON file per plan under <repo>/.agents_workspace/implementation/<slug>.json,
 mirroring the plan's relative path. A missing sidecar means `ready` with empty history.
 """
+
 from __future__ import annotations
 
 import json
@@ -47,8 +48,15 @@ def read_record(project, slug: str) -> dict:
     return rec
 
 
-def set_status(project, slug: str, to: str, *, trigger: str,
-               run_id: str | None = None, rc: int | None = None) -> dict:
+def set_status(
+    project,
+    slug: str,
+    to: str,
+    *,
+    trigger: str,
+    run_id: str | None = None,
+    rc: int | None = None,
+) -> dict:
     """Validate (current, to) against ALLOWED + the trigger, append a history record,
     and atomically write the sidecar. Returns the updated record. Raises ValueError on an
     illegal transition or disallowed trigger."""
@@ -57,7 +65,9 @@ def set_status(project, slug: str, to: str, *, trigger: str,
 
     edge = (current, to)
     if edge not in ALLOWED:
-        raise ValueError(f"illegal transition {current!r} -> {to!r} for {project.name}/{slug}")
+        raise ValueError(
+            f"illegal transition {current!r} -> {to!r} for {project.name}/{slug}"
+        )
     if trigger not in ALLOWED[edge]:
         raise ValueError(
             f"trigger {trigger!r} not allowed for {current!r} -> {to!r} "
@@ -67,10 +77,16 @@ def set_status(project, slug: str, to: str, *, trigger: str,
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     rec["status"] = to
     rec["slug"] = slug
-    rec["history"].append({
-        "ts": ts, "from": current, "to": to,
-        "trigger": trigger, "run_id": run_id, "rc": rc,
-    })
+    rec["history"].append(
+        {
+            "ts": ts,
+            "from": current,
+            "to": to,
+            "trigger": trigger,
+            "run_id": run_id,
+            "rc": rc,
+        }
+    )
 
     _atomic_write(sidecar_path(project, slug), rec)
     return rec
