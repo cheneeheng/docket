@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docket"
+version = "0.1.0"
+description = "Local plan command-center for many Claude Code repos"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["textual>=0.60"]
+
+[project.scripts]
+docket = "docket.__main__:main"
+
+[tool.setuptools]
+packages = ["docket"]
+
+[tool.setuptools.package-data]
+docket = ["static/*"]
