@@ -20,12 +20,16 @@ uv sync                          # install   (fallback: pip install -e .)
 uv run docket tui                # Textual terminal UI            (fallback: docket tui)
 uv run docket serve --port 8765  # localhost browser page         (fallback: docket serve --port 8765)
                                  # -> http://127.0.0.1:8765
+uv run pytest                    # test suite (100% coverage gate via --cov, configured in pyproject)
 ```
 
-Both subcommands accept `--registry PATH`. No test suite, linter, or build step exists — per the
-contract, do not add tests unless asked. For a quick sanity check on an edit, parse/type-check the
-changed file (`uv run python -m py_compile <file>`, fallback `python -m py_compile <file>`). The headless runner shells out to `claude` (BYO-CLI, must be installed and
-authenticated); docket never handles API keys.
+Both subcommands accept `--registry PATH`. A pytest suite lives under `tests/` (`unit/` +
+`api/`) and is kept at 100% line+branch coverage — per the contract, do not add tests unless
+asked, but if you change `docket/` keep the suite green and coverage at 100%. No linter step
+exists. For a quick sanity check on an edit, parse/type-check the changed file
+(`uv run python -m py_compile <file>`, fallback `python -m py_compile <file>`). The headless
+runner shells out to `claude` (BYO-CLI, must be installed and authenticated); docket never
+handles API keys.
 
 Registry resolution (first match wins): `--registry PATH` → `$DOCKET_REGISTRY` →
 `./projects.json` → `~/.config/docket/projects.json`.
