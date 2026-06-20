@@ -28,3 +28,6 @@ jobs:
           python-version: "3.11"
       - run: uv sync
       - run: uv run pytest --cov-fail-under=100
+      # Packaging smoke test: exercises importlib.resources resolution of the shipped
+      # schema end to end (the $schema pointer in a fresh config) without needing `claude`.
+      - run: uv run docket init --dry-run

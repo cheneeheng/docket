@@ -19,6 +19,20 @@ function resolveTemplate(slug) {
     : state.template;
 }
 
+// The effective instruction for a plan: project override → defaults → constant, {path}
+// filled, resolved server-side. Falls back to the global template if the fetch fails.
+async function effectiveTemplate(project, slug) {
+  try {
+    const res = await fetch(
+      `/api/instruction-template?project=${enc(project)}&slug=${enc(slug)}`
+    ).then((r) => r.json());
+    if (res.template) return res.template;
+  } catch {
+    /* fall through to the global template */
+  }
+  return resolveTemplate(slug);
+}
+
 // --- data ------------------------------------------------------------------
 
 async function loadProjects() {
@@ -42,7 +56,7 @@ function renderTree() {
   root.innerHTML = "";
   if (!state.projects.length) {
     root.innerHTML =
-      '<p class="placeholder">no projects — edit projects.json and reload</p>';
+      '<p class="placeholder">no projects — edit .docket.json and reload</p>';
     return;
   }
   for (const project of state.projects) {
@@ -175,7 +189,8 @@ async function manual(endpoint) {
 
 async function implementOne() {
   const { project, slug } = state.selected;
-  const instruction = window.prompt("Instruction (names the plan file):", resolveTemplate(slug));
+  const def = await effectiveTemplate(project, slug);
+  const instruction = window.prompt("Instruction (names the plan file):", def);
   if (instruction === null) return;
   await submitBatch([{ project, slug, instruction }]);
   await refreshSelected();
@@ -185,7 +200,7 @@ async function implementSelected() {
   const items = checkedItems();
   if (!items.length) return;
   for (const item of items) {
-    const def = resolveTemplate(item.slug);
+    const def = await effectiveTemplate(item.project, item.slug);
     const ins = window.prompt(`Instruction for ${item.project}/${item.slug}:`, def);
     if (ins === null) return; // cancel whole batch
     item.instruction = ins;

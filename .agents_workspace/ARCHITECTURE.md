@@ -10,12 +10,17 @@ External actors and systems around docket's boundary.
 
 ```mermaid
 flowchart LR
-    you([You]) -->|edit| registry["projects.json<br/>(registry)"]
+    you([You]) -->|generate / --merge| init["docket init<br/>(scaffold .docket.json)"]
+    init --> registry[".docket.json<br/>(registry: app · defaults · projects)"]
+    you -->|hand-edit| registry
+    you -->|check| doctor["docket doctor<br/>(config sanity)"]
     you -->|author| plans[".agents_workspace/planning/**.md<br/>(plans — read-only to docket)"]
     you -->|use| tui["docket tui"]
     you -->|browser| server["docket serve<br/>127.0.0.1"]
 
+    schema["docket/schema/docket.schema.json<br/>(shipped; editor autocomplete)"] -. $schema .-> registry
     registry --> docket((docket))
+    doctor --> registry
     plans --> docket
     tui --- docket
     server --- docket
@@ -34,7 +39,7 @@ flowchart TD
         server["server.py<br/>ThreadingHTTPServer + SSE"]
         static["static/<br/>index.html · app.js · style.css"]
     end
-    core["core.py<br/>registry · plan discovery · safe_slug<br/>manual_command · run_implement · resolve_instruction"]
+    core["core.py<br/>load_registry (layer cascade → Config) · plan discovery · safe_slug<br/>manual_command · run_implement · resolve_instruction<br/>cmd_init · discover_repos · cmd_doctor"]
     rm["RunManager (server side)<br/>group-by-project · sequential per project<br/>concurrent across · stop-on-failure"]
     lock["per-project lock<br/>dict[path]→Lock"]
     tracker["tracker.py<br/>sidecar read/write · ALLOWED table<br/>atomic write · reset_stale_runs"]
@@ -90,18 +95,29 @@ a read-only view of a markdown file plus its sidecar status.
 
 ```mermaid
 erDiagram
+    CONFIG ||--o{ PROJECT : "resolves (cascade)"
     PROJECT ||--o{ PLAN : "discovers"
     PLAN ||--|| SIDECAR : "status from"
     SIDECAR ||--o{ TRANSITION : "history"
     BATCH ||--|{ RUN : "groups by project"
     RUN }o--|| PLAN : "implements"
 
+    CONFIG {
+        int port "app-level; --port flag overrides"
+        list projects
+    }
     PROJECT {
         string name PK
-        string path
+        string path "~ and $VARS expanded → abspath"
         list allowed_tools
+        string instruction_template
         string model
         int max_turns
+        string permission_mode "acceptEdits|default|plan|bypassPermissions"
+        string planning_dir
+        string implementation_dir
+        string claude_bin
+        list claude_extra_args
     }
     PLAN {
         string slug "rel path under planning/, sans .md"
@@ -143,6 +159,39 @@ stateDiagram-v2
 
 ## Key Decisions
 
+### 2026-06-20 — Three-layer config in .docket.json, resolved at load (v2)
+
+**Status:** Accepted
+**Context:** v1 hardcoded most knobs (allowed_tools, model, max_turns, permission mode, the
+planning/implementation dirs, the claude binary) and read a flat `projects.json`. Managing ~10
+repos needs per-project overrides without per-repo code, and the registry should be the whole
+config.
+**Decision:** Rename the registry to `.docket.json` and give it three tiers — top-level app
+settings (`port`), a `defaults` layer, and `projects[]` overrides. `load_registry` merges them
+per-knob (`CODE_DEFAULTS` → `defaults.<k>` → `project.<k>`) into resolved `Project` fields and
+returns a `Config`; every downstream reader stays unchanged in shape. The loader is **not**
+cached so a changed `--registry`/`$DOCKET_REGISTRY` is always re-read. No automatic migration
+from `projects.json` (a top-level `instruction_template` is leniently promoted into `defaults`).
+The instruction template keeps a 4th, highest layer: the per-plan override at submit time.
+**Consequences:** Every knob is configurable with a global baseline and per-project overrides;
+list overrides replace (not merge). `run_implement` preflights `claude_bin` before flipping
+status/taking the lock so a bad binary fails cleanly.
+
+### 2026-06-20 — `docket init` scaffolds config; JSON Schema is editor-side only (v2)
+
+**Status:** Accepted
+**Context:** A complete `.docket.json` is tedious to hand-author and easy to mistype. Runtime
+JSON-Schema validation would add a dependency against the "stdlib-only" decision below.
+**Decision:** Ship `docket init [--scan ROOT] [--force|--merge] [--dry-run]` to generate a full
+default config (or `--merge` only newly-discovered repos in place, the re-run path as repos
+drift) and `docket doctor` to sanity-check it (paths, dupes, planning dir, `permission_mode`,
+`claude_bin` on PATH). Ship a JSON Schema (`docket/schema/docket.schema.json`) as package data,
+pointed at by the generated `$schema` — consumed by editors only. Runtime loading stays lenient
+stdlib checks and never reads the schema.
+**Consequences:** No blank-page authoring and no new dependency; `doctor`'s exit code (1 on any
+error-level finding) makes it usable as a pre-run gate. The `$schema` pointer is machine-specific
+when written absolute by `init` — rerun `init` if the install moves.
+
 ### 2026-06-20 — Stdlib http.server + JSON, no web framework or DB
 
 **Status:** Accepted
@@ -174,8 +223,9 @@ distinct "status" notions coexist; code reads lifecycle status exclusively from 
 stdin and breaks cross-file references (a plan may reference its SKELETON / earlier iterations).
 **Decision:** Pipe a short instruction on stdin that *names the plan file*
 (`.agents_workspace/planning/<slug>.md`); Claude Code opens and reads it (and any siblings)
-itself. The instruction comes from a global template (`instruction_template` or
-`DEFAULT_INSTRUCTION_TEMPLATE`) with `{path}` substituted, overridable per plan at submit time.
+itself. The instruction comes from the resolved `project.instruction_template` (config cascade:
+`defaults` → `DEFAULT_INSTRUCTION_TEMPLATE`) with `{path}` substituted, overridable per plan at
+submit time.
 A re-run from `implemented` is a brand-new session with fresh instruction text.
 **Consequences:** Tiny stdin, full sibling-file access, per-plan instructions, clean re-runs.
 docket builds no message array and manages no context window — Claude Code owns the conversation.

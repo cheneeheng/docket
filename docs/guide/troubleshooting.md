@@ -3,11 +3,12 @@
 Common stumbles while *using* docket. For installing, configuring, or recovering the system, see
 the [Operations runbook](operations/runbook.md).
 
-## "No projects — edit projects.json"
+## "No projects — edit .docket.json"
 
 docket didn't find a registry, or it's empty. docket searches, first match wins: `--registry PATH`
-→ `$DOCKET_REGISTRY` → `./projects.json` → `~/.config/docket/projects.json`. Create or fix one —
-see [Configure the registry](operations/configure-registry.md).
+→ `$DOCKET_REGISTRY` → `./.docket.json` → `~/.config/docket/.docket.json`. Generate one with
+`docket init` (or fix the existing file) — see
+[Configure the registry](operations/configure-registry.md).
 
 ## My project shows but has no plans
 

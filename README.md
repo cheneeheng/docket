@@ -37,31 +37,52 @@ it and does not handle API keys.
 
 ## Registry
 
-Create a `projects.json` (a sample is committed). Resolution order, first match wins:
-`--registry PATH` → `$DOCKET_REGISTRY` → `./projects.json` → `~/.config/docket/projects.json`.
+The registry is a single `.docket.json` (a sample is committed). Resolution order, first match
+wins: `--registry PATH` → `$DOCKET_REGISTRY` → `./.docket.json` → `~/.config/docket/.docket.json`.
+
+Don't start from a blank file — generate one and edit:
+
+```
+docket init                 # write a full default ./.docket.json
+docket init --scan ~/code   # also pre-populate projects from repos with a planning/ dir
+docket init --scan ~/code --merge   # re-run later: add only newly-found repos, keep your edits
+```
+
+It has three layers — top-level app settings, a `defaults` baseline, and per-project overrides:
 
 ```json
 {
-  "instruction_template": "Read the plan at {path} and implement it fully. ...",
+  "$schema": "docket/schema/docket.schema.json",
+  "port": 8765,
+  "defaults": {
+    "model": "claude-sonnet-4-6",
+    "max_turns": 40,
+    "instruction_template": "Read the plan at {path} and implement it fully. ..."
+  },
   "projects": [
     { "name": "pyxyflow", "path": "~/code/pyxyflow" },
-    { "name": "mcp-harness", "path": "~/code/mcp-harness", "model": "claude-sonnet-4-6", "max_turns": 40 }
+    { "name": "mcp-harness", "path": "~/code/mcp-harness", "max_turns": 30 }
   ]
 }
 ```
 
-Per-project fields: `name` (required, unique), `path` (required, abspath to a git repo),
-`allowed_tools` (optional, defaults to a safe edit+test allowlist), `model` (optional),
-`max_turns` (optional, default 30). `instruction_template` is optional.
+Each project needs `name` (unique) + `path` (a git repo; `~`/`$VARS` expanded) and may override
+any `defaults` knob: `allowed_tools`, `instruction_template`, `model`, `max_turns`,
+`permission_mode`, `planning_dir`, `implementation_dir`, `claude_bin`, `claude_extra_args`. A
+knob left unset everywhere falls back to a built-in default. List overrides **replace** (not
+merge) the defaults list. The committed `$schema` pointer gives editors autocomplete + validation;
+docket itself never reads the schema at runtime.
 
 ## Run
 
 ```
 docket tui                  # Textual terminal UI
 docket serve --port 8765    # localhost browser page -> http://127.0.0.1:8765
+docket doctor               # check the resolved config (paths, permission_mode, claude on PATH)
 ```
 
-Both subcommands accept `--registry PATH`. The browser server binds to `127.0.0.1` only.
+`serve`'s default port comes from `port` in the config (the `--port` flag overrides). All
+subcommands accept `--registry PATH`. The browser server binds to `127.0.0.1` only.
 
 ## MVP limitations
 

@@ -63,3 +63,30 @@ def test_run_implement_rejects_when_locked(project, fake_popen_factory):
     core.project_lock(project.path).acquire(blocking=False)  # hold it
     with pytest.raises(RuntimeError, match="already active"):
         list(core.run_implement(project, "alpha", "instr"))
+
+
+def test_run_implement_preflight_missing_bin_does_not_flip_status(project, monkeypatch):
+    write_plan(project, "alpha")
+    project.claude_bin = "definitely-not-a-real-binary"
+    monkeypatch.setattr(core.shutil, "which", lambda b: None)
+    with pytest.raises(FileNotFoundError, match="not found on PATH"):
+        list(core.run_implement(project, "alpha", "instr"))
+    # preflight runs before set_status/lock: plan stays ready, lock is free
+    assert tracker.read_record(project, "alpha")["status"] == "ready"
+    assert core.project_lock(project.path).acquire(blocking=False)
+
+
+def test_run_implement_passes_permission_mode_and_extra_args(
+    project, fake_popen_factory
+):
+    write_plan(project, "alpha")
+    project.permission_mode = "plan"
+    project.claude_extra_args = ["--add-dir", "/x"]
+    captured = fake_popen_factory(OK_EVENTS, returncode=0)
+    list(core.run_implement(project, "alpha", "instr"))
+    cmd = captured["cmd"]
+    assert cmd[0] == "claude"  # resolved claude_bin
+    assert cmd[cmd.index("--permission-mode") + 1] == "plan"
+    assert cmd[-2:] == ["--add-dir", "/x"]  # extra args appended last
+    # streaming flags stay hardwired regardless of config
+    assert "--output-format" in cmd and "stream-json" in cmd and "--verbose" in cmd

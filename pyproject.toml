@@ -17,7 +17,7 @@ docket = "docket.__main__:main"
 packages = ["docket"]
 
 [tool.setuptools.package-data]
-docket = ["static/*"]
+docket = ["static/*", "schema/*.json"]
 
 [dependency-groups]
 dev = [

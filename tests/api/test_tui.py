@@ -59,7 +59,9 @@ async def test_mount_populates_tree_and_resets_stale(tui_registry):
 
 
 async def test_mount_empty_shows_no_projects(monkeypatch):
-    monkeypatch.setattr(core, "load_registry", lambda registry: [])
+    monkeypatch.setattr(
+        core, "load_registry", lambda registry: core.Config(port=8765, projects=[])
+    )
     monkeypatch.setattr(
         core, "registry_search_paths", lambda registry: ["/a/projects.json"]
     )

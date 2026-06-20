@@ -76,7 +76,7 @@ class DocketApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self._projects = core.load_registry(self._registry_path)
+        self._projects = core.load_registry(self._registry_path).projects
         reset = tracker.reset_stale_runs(self._projects)
         if reset:
             self.query_one("#log", RichLog).write(
@@ -90,7 +90,7 @@ class DocketApp(App):
         tree = self.query_one("#tree", Tree)
         tree.clear()
         if not self._projects:
-            tree.root.add_leaf("no projects — edit projects.json")
+            tree.root.add_leaf("no projects — edit .docket.json")
             for path in core.registry_search_paths(self._registry_path):
                 tree.root.add_leaf(f"  searched: {path}")
             return
@@ -175,7 +175,7 @@ class DocketApp(App):
         if not self._current:
             return
         name, slug = self._current
-        default = core.resolve_instruction(slug, None)
+        default = core.resolve_instruction(self._project(name), slug, None)
 
         def go(instruction: str | None) -> None:
             if instruction is None:
@@ -189,7 +189,7 @@ class DocketApp(App):
             self._notify_log("[docket] nothing selected (space to select)")
             return
         items = [
-            (p, s, core.resolve_instruction(s, None))
+            (p, s, core.resolve_instruction(self._project(p), s, None))
             for (p, s) in sorted(self._selected)
         ]
         self._selected.clear()

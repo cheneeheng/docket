@@ -25,8 +25,8 @@ ALLOWED = {  # (from, to): {triggers}  — the full lifecycle table from SKELETO
 
 
 def sidecar_path(project, slug: str) -> Path:
-    """<repo>/.agents_workspace/implementation/<slug>.json — mirrors the plan's path."""
-    return Path(project.path) / ".agents_workspace" / "implementation" / f"{slug}.json"
+    """<repo>/<implementation_dir>/<slug>.json — mirrors the plan's path."""
+    return Path(project.path) / project.implementation_dir / f"{slug}.json"
 
 
 def read_record(project, slug: str) -> dict:
@@ -114,7 +114,7 @@ def reset_stale_runs(projects) -> list:
     `running` is orphaned. Returns the list of (project_name, slug) reset."""
     reset: list[tuple[str, str]] = []
     for project in projects:
-        impl_root = Path(project.path) / ".agents_workspace" / "implementation"
+        impl_root = Path(project.path) / project.implementation_dir
         if not impl_root.is_dir():
             continue
         for sidecar in impl_root.rglob("*.json"):
