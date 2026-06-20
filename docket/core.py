@@ -388,12 +388,18 @@ class RunManager:
                 failed = True
 
     def stream(self, run_id: str, keepalive: float = 15.0):
-        """Generator the SSE handler drains: yields ('data', line), ('keepalive', None)
-        while idle, and finally ('end', state). A queued run just emits keep-alives until
-        its turn in its project batch arrives."""
+        """Look up the run and return the SSE generator. Raises KeyError eagerly for an
+        unknown run_id (so the handler can answer 404 before sending stream headers — a
+        generator function would defer that raise until first iteration)."""
         run = self._runs.get(run_id)
         if run is None:
             raise KeyError(run_id)
+        return self._stream(run, keepalive)
+
+    def _stream(self, run: Run, keepalive: float):
+        """Drain one run's queue: yields ('data', line), ('keepalive', None) while idle,
+        and finally ('end', state). A queued run just emits keep-alives until its turn in
+        its project batch arrives."""
         while True:
             try:
                 item = run.queue.get(timeout=keepalive)

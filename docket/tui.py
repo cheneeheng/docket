@@ -59,7 +59,7 @@ class DocketApp(App):
 
     def __init__(self, registry: str | None = None) -> None:
         super().__init__()
-        self._registry = registry
+        self._registry_path = registry
         self._projects: list[core.Project] = []
         self._selected: set[tuple[str, str]] = set()  # (project, slug) for batch
         self._current: tuple[str, str] | None = None   # focused plan
@@ -75,7 +75,7 @@ class DocketApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self._projects = core.load_registry(self._registry)
+        self._projects = core.load_registry(self._registry_path)
         reset = tracker.reset_stale_runs(self._projects)
         if reset:
             self.query_one("#log", RichLog).write(f"[docket] reset {len(reset)} stale run(s)")
@@ -88,7 +88,7 @@ class DocketApp(App):
         tree.clear()
         if not self._projects:
             tree.root.add_leaf("no projects — edit projects.json")
-            for path in core.registry_search_paths(self._registry):
+            for path in core.registry_search_paths(self._registry_path):
                 tree.root.add_leaf(f"  searched: {path}")
             return
         tree.root.expand()

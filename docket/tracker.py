@@ -83,14 +83,13 @@ def _atomic_write(path: Path, rec: dict) -> None:
     tmp.write_text(json.dumps(rec, indent=2), encoding="utf-8")
     # On Windows a just-written target can be transiently locked by AV/indexer, making the
     # atomic os.replace fail with PermissionError; retry briefly before giving up.
-    for attempt in range(10):
+    for _ in range(9):
         try:
             os.replace(tmp, path)
             return
         except PermissionError:
-            if attempt == 9:
-                raise
             time.sleep(0.05)
+    os.replace(tmp, path)  # final attempt; let a persistent PermissionError propagate
 
 
 def reset_stale_runs(projects) -> list:
