@@ -1,4 +1,5 @@
 """CLI dispatch: `docket tui` | `docket serve [--port] [--registry]`."""
+
 import argparse
 import sys
 
@@ -17,9 +18,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "tui":
         from docket.tui import run_tui
+
         return run_tui(registry=args.registry)
     if args.command == "serve":
         from docket.server import run_server
+
         return run_server(port=args.port, registry=args.registry)
 
     parser.print_help()

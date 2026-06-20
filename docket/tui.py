@@ -3,6 +3,7 @@
 Left: project/plan tree with a status badge per plan. Right-top: read-only plan view.
 Right-bottom: live run log. The MVP TUI streams one run at a time.
 """
+
 from __future__ import annotations
 
 from textual import work
@@ -62,8 +63,8 @@ class DocketApp(App):
         self._registry_path = registry
         self._projects: list[core.Project] = []
         self._selected: set[tuple[str, str]] = set()  # (project, slug) for batch
-        self._current: tuple[str, str] | None = None   # focused plan
-        self._proc = None                               # active headless Popen
+        self._current: tuple[str, str] | None = None  # focused plan
+        self._proc = None  # active headless Popen
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -78,7 +79,9 @@ class DocketApp(App):
         self._projects = core.load_registry(self._registry_path)
         reset = tracker.reset_stale_runs(self._projects)
         if reset:
-            self.query_one("#log", RichLog).write(f"[docket] reset {len(reset)} stale run(s)")
+            self.query_one("#log", RichLog).write(
+                f"[docket] reset {len(reset)} stale run(s)"
+            )
         self._reload_tree()
 
     # --- tree -----------------------------------------------------------------
@@ -185,7 +188,10 @@ class DocketApp(App):
         if not self._selected:
             self._notify_log("[docket] nothing selected (space to select)")
             return
-        items = [(p, s, core.resolve_instruction(s, None)) for (p, s) in sorted(self._selected)]
+        items = [
+            (p, s, core.resolve_instruction(s, None))
+            for (p, s) in sorted(self._selected)
+        ]
         self._selected.clear()
         self._run_batch(items)
 
@@ -205,7 +211,9 @@ class DocketApp(App):
                 self.call_from_thread(log.write, f"[docket] ── {name}/{slug} ──")
                 try:
                     gen = core.run_implement(
-                        project, slug, instruction,
+                        project,
+                        slug,
+                        instruction,
                         on_spawn=lambda p: setattr(self, "_proc", p),
                     )
                     for line in gen:
@@ -213,7 +221,9 @@ class DocketApp(App):
                     rc = self._proc.returncode if self._proc else 0
                     self._proc = None
                     if rc != 0:
-                        self.call_from_thread(log.write, f"[docket] {name} batch stopped (rc={rc})")
+                        self.call_from_thread(
+                            log.write, f"[docket] {name} batch stopped (rc={rc})"
+                        )
                         break
                 except (ValueError, RuntimeError) as exc:
                     self.call_from_thread(log.write, f"[docket] {exc}")

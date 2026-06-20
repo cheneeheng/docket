@@ -1,4 +1,5 @@
 """docket core: registry, plan discovery/read, manual command, headless runner, batch."""
+
 from __future__ import annotations
 
 import json
@@ -13,8 +14,14 @@ from queue import Empty, Queue
 
 from docket import frontmatter, tracker
 
-DEFAULT_ALLOWED_TOOLS = ["Read", "Edit", "Write",
-                         "Bash(pytest:*)", "Bash(npm test:*)", "Bash(npm run test:*)"]
+DEFAULT_ALLOWED_TOOLS = [
+    "Read",
+    "Edit",
+    "Write",
+    "Bash(pytest:*)",
+    "Bash(npm test:*)",
+    "Bash(npm run test:*)",
+]
 
 # {path} is filled with the plan's repo-relative path: .agents_workspace/planning/<slug>.md
 DEFAULT_INSTRUCTION_TEMPLATE = (
@@ -36,7 +43,9 @@ _SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
 class Project:
     name: str
     path: str
-    allowed_tools: list[str] = field(default_factory=lambda: list(DEFAULT_ALLOWED_TOOLS))
+    allowed_tools: list[str] = field(
+        default_factory=lambda: list(DEFAULT_ALLOWED_TOOLS)
+    )
     model: str | None = None
     max_turns: int = 30
 
@@ -44,10 +53,10 @@ class Project:
 @dataclass
 class Plan:
     project: str
-    slug: str            # relative path under planning/, sans .md; may contain "/"
+    slug: str  # relative path under planning/, sans .md; may contain "/"
     title: str
-    status: str          # ready|running|implemented — sourced from the sidecar, NOT the plan
-    body: str = ""       # "" for list summaries; full markdown from read_plan
+    status: str  # ready|running|implemented — sourced from the sidecar, NOT the plan
+    body: str = ""  # "" for list summaries; full markdown from read_plan
     history: list = field(default_factory=list)
 
 
@@ -95,7 +104,7 @@ def load_registry(path: str | None = None) -> list[Project]:
         data = json.load(fh)
 
     if not isinstance(data, dict) or not isinstance(data.get("projects"), list):
-        raise ValueError(f"{found}: expected top-level shape {{\"projects\": [...]}}")
+        raise ValueError(f'{found}: expected top-level shape {{"projects": [...]}}')
 
     REGISTRY_INSTRUCTION_TEMPLATE = data.get("instruction_template") or None
 
@@ -114,15 +123,19 @@ def load_registry(path: str | None = None) -> list[Project]:
             raise ValueError(f"{found}: project {name!r} is missing 'path'")
         abspath = os.path.abspath(os.path.expanduser(raw_path))
         if not os.path.isdir(abspath):
-            raise ValueError(f"{found}: project {name!r} path is not a directory: {abspath}")
+            raise ValueError(
+                f"{found}: project {name!r} path is not a directory: {abspath}"
+            )
 
-        projects.append(Project(
-            name=name,
-            path=abspath,
-            allowed_tools=entry.get("allowed_tools") or list(DEFAULT_ALLOWED_TOOLS),
-            model=entry.get("model"),
-            max_turns=entry.get("max_turns", 30),
-        ))
+        projects.append(
+            Project(
+                name=name,
+                path=abspath,
+                allowed_tools=entry.get("allowed_tools") or list(DEFAULT_ALLOWED_TOOLS),
+                model=entry.get("model"),
+                max_turns=entry.get("max_turns", 30),
+            )
+        )
     return projects
 
 
@@ -143,12 +156,14 @@ def list_plans(project: Project) -> list[Plan]:
         slug = md.relative_to(root).with_suffix("").as_posix()
         meta, _ = frontmatter.parse(md.read_text(encoding="utf-8"))
         status = tracker.read_record(project, slug)["status"]
-        plans.append(Plan(
-            project=project.name,
-            slug=slug,
-            title=meta.get("title") or slug,
-            status=status,
-        ))
+        plans.append(
+            Plan(
+                project=project.name,
+                slug=slug,
+                title=meta.get("title") or slug,
+                status=status,
+            )
+        )
     plans.sort(key=lambda p: (p.status, p.slug))
     return plans
 
@@ -246,8 +261,14 @@ def _tool_digest(inp: dict) -> str:
     return ""
 
 
-def run_implement(project: Project, slug: str, instruction: str, *,
-                  on_spawn=None, run_id: str | None = None):
+def run_implement(
+    project: Project,
+    slug: str,
+    instruction: str,
+    *,
+    on_spawn=None,
+    run_id: str | None = None,
+):
     """Generator: spawn `claude -p`, pipe the INSTRUCTION (names the plan file) on stdin,
     yield human-readable display lines. The plan body is never piped. on_spawn(proc) hands
     the Popen handle to the caller for stop()."""
@@ -262,19 +283,30 @@ def run_implement(project: Project, slug: str, instruction: str, *,
     try:
         tracker.set_status(project, slug, "running", trigger="headless", run_id=run_id)
         allow = ",".join(project.allowed_tools)
-        cmd = ["claude", "-p",
-               "--output-format", "stream-json", "--verbose",
-               "--permission-mode", "acceptEdits",
-               "--max-turns", str(project.max_turns),
-               "--allowedTools", allow]
+        cmd = [
+            "claude",
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--permission-mode",
+            "acceptEdits",
+            "--max-turns",
+            str(project.max_turns),
+            "--allowedTools",
+            allow,
+        ]
         if project.model:
             cmd += ["--model", project.model]
 
         proc = subprocess.Popen(
-            cmd, cwd=project.path,
+            cmd,
+            cwd=project.path,
             stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
         if on_spawn:
             on_spawn(proc)
@@ -290,14 +322,21 @@ def run_implement(project: Project, slug: str, instruction: str, *,
             proc.stdout.close()
 
         ok = proc.returncode == 0
-        tracker.set_status(project, slug, "implemented" if ok else "ready",
-                           trigger="headless", run_id=run_id, rc=proc.returncode)
+        tracker.set_status(
+            project,
+            slug,
+            "implemented" if ok else "ready",
+            trigger="headless",
+            run_id=run_id,
+            rc=proc.returncode,
+        )
         yield f"[docket] run {'completed' if ok else f'ended (rc={proc.returncode})'}"
     finally:
         lock.release()
 
 
 # --- Batch orchestration (ITER_03, server side) -------------------------------
+
 
 @dataclass
 class Run:
@@ -336,15 +375,21 @@ class RunManager:
             slug = safe_slug(item.get("slug", ""))
             rec = tracker.read_record(project, slug)
             if rec["status"] not in ("ready", "implemented"):
-                raise ValueError(f"{project.name}/{slug} is '{rec['status']}', not runnable")
+                raise ValueError(
+                    f"{project.name}/{slug} is '{rec['status']}', not runnable"
+                )
             instruction = resolve_instruction(slug, item.get("instruction"))
             validated.append((project, slug, instruction))
 
         runs: list[Run] = []
         by_project: dict[str, list[Run]] = {}
         for project, slug, instruction in validated:
-            run = Run(run_id=uuid.uuid4().hex, project=project.name,
-                      slug=slug, instruction=instruction)
+            run = Run(
+                run_id=uuid.uuid4().hex,
+                project=project.name,
+                slug=slug,
+                instruction=instruction,
+            )
             runs.append(run)
             by_project.setdefault(project.name, []).append(run)
 
@@ -371,15 +416,20 @@ class RunManager:
             run.state = "running"
             try:
                 gen = run_implement(
-                    project, run.slug, run.instruction,
+                    project,
+                    run.slug,
+                    run.instruction,
                     on_spawn=lambda p, r=run: setattr(r, "proc", p),
                     run_id=run.run_id,
                 )
                 for line in gen:
                     run.queue.put(line)
                 if run.state != "stopped":
-                    run.state = "done" if (run.proc is None or run.proc.returncode == 0) \
+                    run.state = (
+                        "done"
+                        if (run.proc is None or run.proc.returncode == 0)
                         else "failed"
+                    )
             except (ValueError, RuntimeError) as exc:
                 run.queue.put(f"[docket] {exc}")
                 run.state = "failed"

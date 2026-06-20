@@ -1,4 +1,5 @@
 """Unit tests for the implementation sidecar tracker."""
+
 import json
 
 import pytest
@@ -9,7 +10,9 @@ from tests.conftest import write_plan
 
 def test_sidecar_path_mirrors_slug(project):
     p = tracker.sidecar_path(project, "feature/ITER_01")
-    assert p.as_posix().endswith(".agents_workspace/implementation/feature/ITER_01.json")
+    assert p.as_posix().endswith(
+        ".agents_workspace/implementation/feature/ITER_01.json"
+    )
 
 
 def test_read_record_missing_is_ready(project):
@@ -49,7 +52,9 @@ def test_set_status_manual_mark_and_history(project):
 
 def test_set_status_illegal_transition_raises(project):
     with pytest.raises(ValueError, match="illegal transition"):
-        tracker.set_status(project, "alpha", "ready", trigger="manual")  # (ready,ready) absent
+        tracker.set_status(
+            project, "alpha", "ready", trigger="manual"
+        )  # (ready,ready) absent
 
 
 def test_set_status_disallowed_trigger_raises(project):
@@ -60,8 +65,9 @@ def test_set_status_disallowed_trigger_raises(project):
 
 def test_set_status_headless_running_then_implemented_records_rc(project):
     tracker.set_status(project, "alpha", "running", trigger="headless", run_id="r1")
-    rec = tracker.set_status(project, "alpha", "implemented",
-                             trigger="headless", run_id="r1", rc=0)
+    rec = tracker.set_status(
+        project, "alpha", "implemented", trigger="headless", run_id="r1", rc=0
+    )
     assert rec["history"][-1]["rc"] == 0
     assert rec["history"][-1]["run_id"] == "r1"
 
@@ -84,8 +90,11 @@ def test_atomic_write_retries_then_succeeds(project, monkeypatch):
 
 
 def test_atomic_write_gives_up_after_retries(project, monkeypatch):
-    monkeypatch.setattr(tracker.os, "replace",
-                        lambda *_: (_ for _ in ()).throw(PermissionError("locked")))
+    monkeypatch.setattr(
+        tracker.os,
+        "replace",
+        lambda *_: (_ for _ in ()).throw(PermissionError("locked")),
+    )
     monkeypatch.setattr(tracker.time, "sleep", lambda *_: None)
     with pytest.raises(PermissionError):
         tracker.set_status(project, "alpha", "implemented", trigger="manual")
@@ -104,4 +113,7 @@ def test_reset_stale_runs_flips_running(project):
     assert reset == [("repo", "alpha")]
     assert tracker.read_record(project, "alpha")["status"] == "ready"
     assert tracker.read_record(project, "beta")["status"] == "implemented"
-    assert tracker.read_record(project, "alpha")["history"][-1]["trigger"] == "startup_reset"
+    assert (
+        tracker.read_record(project, "alpha")["history"][-1]["trigger"]
+        == "startup_reset"
+    )

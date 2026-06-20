@@ -1,4 +1,5 @@
 """Unit tests for plan discovery + read + manual command + safe_slug."""
+
 import pytest
 
 from docket import core, tracker
@@ -10,7 +11,9 @@ def test_safe_slug_accepts_valid(slug):
     assert core.safe_slug(slug) == slug
 
 
-@pytest.mark.parametrize("slug", ["", "/a", "a/", "a//b", "../x", "a/../b", "a/./b", "a b", "a\\b"])
+@pytest.mark.parametrize(
+    "slug", ["", "/a", "a/", "a//b", "../x", "a/../b", "a/./b", "a b", "a\\b"]
+)
 def test_safe_slug_rejects_invalid(slug):
     with pytest.raises(ValueError):
         core.safe_slug(slug)

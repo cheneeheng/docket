@@ -2,6 +2,7 @@
 
 docket never writes plan files, so there is no `dump`.
 """
+
 from __future__ import annotations
 
 
@@ -38,5 +39,5 @@ def parse(text: str) -> tuple[dict, str]:
         if key:
             meta[key] = value
 
-    body = "\n".join(lines[end + 1:])
+    body = "\n".join(lines[end + 1 :])
     return meta, body

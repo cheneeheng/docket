@@ -1,4 +1,5 @@
 """Unit tests for the server-side RunManager (batch orchestration)."""
+
 import subprocess
 from types import SimpleNamespace
 
@@ -16,6 +17,7 @@ def _fake_run_factory(returncode=0, raises=None):
         if raises:
             raise raises
         yield f"line for {slug}"
+
     return fake
 
 
@@ -31,6 +33,7 @@ def _drain(manager, run_id):
 
 
 # --- submit validation --------------------------------------------------------
+
 
 def test_submit_unknown_project(manager):
     with pytest.raises(ValueError, match="unknown project"):
@@ -56,18 +59,23 @@ def test_set_projects_replaces_registry(project):
 
 # --- batch logic (driven synchronously) ---------------------------------------
 
+
 def test_batch_all_done(manager, project, monkeypatch):
     monkeypatch.setattr(core, "run_implement", _fake_run_factory(returncode=0))
-    runs = [core.Run(run_id="r1", project="repo", slug="alpha", instruction="i"),
-            core.Run(run_id="r2", project="repo", slug="beta", instruction="i")]
+    runs = [
+        core.Run(run_id="r1", project="repo", slug="alpha", instruction="i"),
+        core.Run(run_id="r2", project="repo", slug="beta", instruction="i"),
+    ]
     manager._run_project_batch(project, runs)
     assert [r.state for r in runs] == ["done", "done"]
 
 
 def test_batch_stop_on_failure_skips_rest(manager, project, monkeypatch):
     monkeypatch.setattr(core, "run_implement", _fake_run_factory(returncode=1))
-    runs = [core.Run(run_id="r1", project="repo", slug="alpha", instruction="i"),
-            core.Run(run_id="r2", project="repo", slug="beta", instruction="i")]
+    runs = [
+        core.Run(run_id="r1", project="repo", slug="alpha", instruction="i"),
+        core.Run(run_id="r2", project="repo", slug="beta", instruction="i"),
+    ]
     manager._run_project_batch(project, runs)
     assert runs[0].state == "failed"
     assert runs[1].state == "skipped"
@@ -87,8 +95,9 @@ def test_batch_run_stopped_midway_keeps_stopped_state(manager, project, monkeypa
 
 
 def test_batch_precondition_exception_marks_failed(manager, project, monkeypatch):
-    monkeypatch.setattr(core, "run_implement",
-                        _fake_run_factory(raises=RuntimeError("locked")))
+    monkeypatch.setattr(
+        core, "run_implement", _fake_run_factory(raises=RuntimeError("locked"))
+    )
     runs = [core.Run(run_id="r1", project="repo", slug="alpha", instruction="i")]
     manager._run_project_batch(project, runs)
     assert runs[0].state == "failed"
@@ -97,6 +106,7 @@ def test_batch_precondition_exception_marks_failed(manager, project, monkeypatch
 
 
 # --- submit + threads + stream integration ------------------------------------
+
 
 def test_submit_runs_and_streams_to_end(manager, monkeypatch):
     monkeypatch.setattr(core, "run_implement", _fake_run_factory(returncode=0))
@@ -108,6 +118,7 @@ def test_submit_runs_and_streams_to_end(manager, monkeypatch):
 
 
 # --- stream -------------------------------------------------------------------
+
 
 def test_stream_unknown_run_raises_eagerly(manager):
     with pytest.raises(KeyError):
@@ -125,25 +136,37 @@ def test_stream_emits_keepalive_then_end(manager):
 
 # --- stop ---------------------------------------------------------------------
 
+
 def test_stop_unknown_run_raises(manager):
     with pytest.raises(KeyError):
         manager.stop("ghost")
 
 
 def test_stop_finished_run_rejected(manager):
-    run = core.Run(run_id="d1", project="repo", slug="alpha", instruction="i", state="done")
+    run = core.Run(
+        run_id="d1", project="repo", slug="alpha", instruction="i", state="done"
+    )
     manager._runs["d1"] = run
     with pytest.raises(ValueError, match="not stoppable"):
         manager.stop("d1")
 
 
 def test_stop_terminates_running_proc(manager):
-    proc = SimpleNamespace(terminated=False, killed=False,
-                           terminate=lambda: setattr(proc, "terminated", True),
-                           wait=lambda timeout: None,
-                           kill=lambda: setattr(proc, "killed", True))
-    run = core.Run(run_id="s1", project="repo", slug="alpha", instruction="i",
-                   state="running", proc=proc)
+    proc = SimpleNamespace(
+        terminated=False,
+        killed=False,
+        terminate=lambda: setattr(proc, "terminated", True),
+        wait=lambda timeout: None,
+        kill=lambda: setattr(proc, "killed", True),
+    )
+    run = core.Run(
+        run_id="s1",
+        project="repo",
+        slug="alpha",
+        instruction="i",
+        state="running",
+        proc=proc,
+    )
     manager._runs["s1"] = run
     manager.stop("s1")
     assert run.state == "stopped"
@@ -154,20 +177,35 @@ def test_stop_escalates_to_kill_on_timeout(manager):
     def waiter(timeout):
         raise subprocess.TimeoutExpired(cmd="claude", timeout=timeout)
 
-    proc = SimpleNamespace(terminated=False, killed=False,
-                           terminate=lambda: setattr(proc, "terminated", True),
-                           wait=waiter,
-                           kill=lambda: setattr(proc, "killed", True))
-    run = core.Run(run_id="s2", project="repo", slug="alpha", instruction="i",
-                   state="running", proc=proc)
+    proc = SimpleNamespace(
+        terminated=False,
+        killed=False,
+        terminate=lambda: setattr(proc, "terminated", True),
+        wait=waiter,
+        kill=lambda: setattr(proc, "killed", True),
+    )
+    run = core.Run(
+        run_id="s2",
+        project="repo",
+        slug="alpha",
+        instruction="i",
+        state="running",
+        proc=proc,
+    )
     manager._runs["s2"] = run
     manager.stop("s2")
     assert proc.killed
 
 
 def test_stop_running_without_proc(manager):
-    run = core.Run(run_id="s3", project="repo", slug="alpha", instruction="i",
-                   state="queued", proc=None)
+    run = core.Run(
+        run_id="s3",
+        project="repo",
+        slug="alpha",
+        instruction="i",
+        state="queued",
+        proc=None,
+    )
     manager._runs["s3"] = run
     manager.stop("s3")
     assert run.state == "stopped"

@@ -1,10 +1,12 @@
 """Unit tests for instruction resolution, event formatting, tool digest."""
+
 import pytest
 
 from docket import core
 
 
 # --- resolve_instruction ------------------------------------------------------
+
 
 def test_resolve_instruction_default_template():
     out = core.resolve_instruction("alpha", None)
@@ -13,11 +15,17 @@ def test_resolve_instruction_default_template():
 
 def test_resolve_instruction_registry_template(monkeypatch):
     monkeypatch.setattr(core, "REGISTRY_INSTRUCTION_TEMPLATE", "Do {path} please")
-    assert core.resolve_instruction("a/b", None) == "Do .agents_workspace/planning/a/b.md please"
+    assert (
+        core.resolve_instruction("a/b", None)
+        == "Do .agents_workspace/planning/a/b.md please"
+    )
 
 
 def test_resolve_instruction_override_with_path():
-    assert core.resolve_instruction("x", "Run {path}") == "Run .agents_workspace/planning/x.md"
+    assert (
+        core.resolve_instruction("x", "Run {path}")
+        == "Run .agents_workspace/planning/x.md"
+    )
 
 
 def test_resolve_instruction_override_verbatim_no_path():
@@ -30,6 +38,7 @@ def test_resolve_instruction_validates_slug():
 
 
 # --- format_event -------------------------------------------------------------
+
 
 def test_format_event_blank_returns_none():
     assert core.format_event("   \n") is None
@@ -49,14 +58,18 @@ def test_format_event_assistant_text():
 
 
 def test_format_event_assistant_tool_use_with_digest():
-    ev = ('{"type":"assistant","message":{"content":'
-          '[{"type":"tool_use","name":"Edit","input":{"file_path":"a/b.py"}}]}}')
+    ev = (
+        '{"type":"assistant","message":{"content":'
+        '[{"type":"tool_use","name":"Edit","input":{"file_path":"a/b.py"}}]}}'
+    )
     assert core.format_event(ev) == "▸ Edit a/b.py"
 
 
 def test_format_event_assistant_tool_use_no_digest():
-    ev = ('{"type":"assistant","message":{"content":'
-          '[{"type":"tool_use","name":"Think","input":{}}]}}')
+    ev = (
+        '{"type":"assistant","message":{"content":'
+        '[{"type":"tool_use","name":"Think","input":{}}]}}'
+    )
     assert core.format_event(ev) == "▸ Think"
 
 
@@ -89,6 +102,7 @@ def test_format_event_unknown_type_returns_none():
 
 
 # --- _tool_digest -------------------------------------------------------------
+
 
 def test_tool_digest_truncates_and_first_line():
     long = "x" * 200
