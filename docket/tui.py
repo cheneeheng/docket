@@ -70,7 +70,7 @@ class DocketApp(App):
         with Horizontal():
             yield Tree("docket", id="tree")
             with Vertical():
-                yield Static("select a plan", id="plan-view")
+                yield Static("select a plan", id="plan-view", markup=False)
                 yield RichLog(id="log", highlight=False, markup=False, wrap=True)
         yield Footer()
 
