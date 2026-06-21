@@ -28,7 +28,7 @@ def live_server(project, tmp_path, monkeypatch):
 
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
     httpd.registry_path = str(reg)
-    httpd.manager = core.RunManager(core.load_registry(str(reg)))
+    httpd.manager = core.RunManager(core.load_registry(str(reg)).projects)
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
     base = f"http://127.0.0.1:{httpd.server_address[1]}"
@@ -153,6 +153,43 @@ def test_api_instruction_template(live_server):
     base, *_ = live_server
     status, data = _get(base, "/api/instruction-template")
     assert "{path}" in data["template"]
+
+
+def test_api_instruction_template_effective_for_plan(live_server):
+    base, *_ = live_server
+    status, data = _get(base, "/api/instruction-template?project=repo&slug=alpha")
+    assert "alpha.md" in data["template"]
+    assert "{path}" not in data["template"]  # resolved per-plan
+
+
+def test_api_instruction_template_unknown_project(live_server):
+    base, *_ = live_server
+    code, _ = _expect_error(
+        lambda: urllib.request.urlopen(
+            base + "/api/instruction-template?project=ghost&slug=alpha"
+        )
+    )
+    assert code == 404
+
+
+def test_api_instruction_template_bad_slug(live_server):
+    base, *_ = live_server
+    code, _ = _expect_error(
+        lambda: urllib.request.urlopen(
+            base + "/api/instruction-template?project=repo&slug=../x"
+        )
+    )
+    assert code == 400
+
+
+def test_api_instruction_template_missing_plan(live_server):
+    base, *_ = live_server
+    code, _ = _expect_error(
+        lambda: urllib.request.urlopen(
+            base + "/api/instruction-template?project=repo&slug=ghost"
+        )
+    )
+    assert code == 404
 
 
 def test_api_runcmd(live_server):

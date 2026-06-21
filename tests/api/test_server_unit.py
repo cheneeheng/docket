@@ -133,6 +133,18 @@ def test_run_server_with_projects_and_stale_reset(
     assert "shutting down" in out
 
 
+def test_run_server_port_falls_back_to_config(fake_httpd, project, tmp_path):
+    reg = tmp_path / ".docket.json"
+    reg.write_text(
+        json.dumps(
+            {"port": 9111, "projects": [{"name": "repo", "path": project.path}]}
+        ),
+        encoding="utf-8",
+    )
+    server.run_server(port=None, registry=str(reg))  # no --port -> Config.port
+    assert fake_httpd.instances[0].addr == ("127.0.0.1", 9111)
+
+
 def test_run_server_no_projects_prints_search_paths(
     fake_httpd, monkeypatch, tmp_path, capsys
 ):

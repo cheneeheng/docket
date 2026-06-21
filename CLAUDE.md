@@ -20,6 +20,8 @@ uv sync                          # install   (fallback: pip install -e .)
 uv run docket tui                # Textual terminal UI            (fallback: docket tui)
 uv run docket serve --port 8765  # localhost browser page         (fallback: docket serve --port 8765)
                                  # -> http://127.0.0.1:8765
+uv run docket init --scan ~/code # scaffold/refresh .docket.json  (--merge to add new repos in place)
+uv run docket doctor             # sanity-check the resolved config (exit 1 on any error)
 uv run pytest                    # test suite (100% coverage gate via --cov, configured in pyproject)
 ```
 
@@ -32,7 +34,9 @@ runner shells out to `claude` (BYO-CLI, must be installed and authenticated); do
 handles API keys.
 
 Registry resolution (first match wins): `--registry PATH` → `$DOCKET_REGISTRY` →
-`./projects.json` → `~/.config/docket/projects.json`.
+`./.docket.json` → `~/.config/docket/.docket.json`. The registry has three layers (top-level app
+settings · `defaults` · `projects[]`); `load_registry` merges them per-knob
+(`CODE_DEFAULTS` → `defaults.<k>` → `project.<k>`) into a `Config` of resolved `Project`s.
 
 ## Architecture
 

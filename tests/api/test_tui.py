@@ -59,7 +59,9 @@ async def test_mount_populates_tree_and_resets_stale(tui_registry):
 
 
 async def test_mount_empty_shows_no_projects(monkeypatch):
-    monkeypatch.setattr(core, "load_registry", lambda registry: [])
+    monkeypatch.setattr(
+        core, "load_registry", lambda registry: core.Config(port=8765, projects=[])
+    )
     monkeypatch.setattr(
         core, "registry_search_paths", lambda registry: ["/a/projects.json"]
     )
@@ -77,27 +79,27 @@ async def test_select_plan_renders_body(tui_registry):
     reg, _ = tui_registry
     app = DocketApp(registry=reg)
     async with app.run_test():
-        app.on_tree_node_selected(
+        app.on_tree_node_highlighted(
             SimpleNamespace(node=SimpleNamespace(data=("repo", "alpha")))
         )
         view = app.query_one("#plan-view", tui.Static)
         assert "Alpha" in str(view.render())
 
 
-async def test_select_node_without_data_is_noop(tui_registry):
+async def test_highlight_node_without_data_is_noop(tui_registry):
     reg, _ = tui_registry
     app = DocketApp(registry=reg)
     async with app.run_test():
-        app.on_tree_node_selected(SimpleNamespace(node=SimpleNamespace(data=None)))
+        app.on_tree_node_highlighted(SimpleNamespace(node=SimpleNamespace(data=None)))
         assert app._current is None
 
 
-async def test_select_missing_plan_logs(tui_registry, monkeypatch):
+async def test_highlight_missing_plan_logs(tui_registry, monkeypatch):
     reg, _ = tui_registry
     app = DocketApp(registry=reg)
     async with app.run_test():
         msgs = _log_spy(app, monkeypatch)
-        app.on_tree_node_selected(
+        app.on_tree_node_highlighted(
             SimpleNamespace(node=SimpleNamespace(data=("repo", "ghost")))
         )
         assert any("ghost" in m for m in msgs)
@@ -174,8 +176,12 @@ async def test_toggle_select_adds_and_removes(tui_registry):
     reg, _ = tui_registry
     app = DocketApp(registry=reg)
     async with app.run_test():
-        app.action_toggle_select()  # no current -> noop
-        app._current = ("repo", "alpha")
+        app.action_toggle_select()  # cursor on root (no data) -> noop
+        tree = app.query_one("#tree", tui.Tree)
+        node = next(
+            n for n in tree.root.children[0].children if n.data == ("repo", "alpha")
+        )
+        tree.move_cursor(node)
         app.action_toggle_select()
         assert ("repo", "alpha") in app._selected
         app.action_toggle_select()

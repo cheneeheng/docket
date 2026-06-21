@@ -32,7 +32,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _projects(self) -> list[core.Project]:
         """Reload the registry each request — plan files are the source of truth."""
-        projects = core.load_registry(self.registry_path)
+        projects = core.load_registry(self.registry_path).projects
         self.manager.set_projects(projects)
         return projects
 
@@ -71,7 +71,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/plan":
                 return self._api_plan(qs)
             if path == "/api/instruction-template":
-                return self._send_json({"template": self._template()})
+                return self._api_instruction_template(qs)
             if path == "/api/runcmd":
                 return self._api_runcmd(qs)
             if path == "/api/stream":
@@ -119,9 +119,25 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- API ------------------------------------------------------------------
 
-    def _template(self) -> str:
-        core.load_registry(self.registry_path)  # refresh REGISTRY_INSTRUCTION_TEMPLATE
-        return core.REGISTRY_INSTRUCTION_TEMPLATE or core.DEFAULT_INSTRUCTION_TEMPLATE
+    def _api_instruction_template(self, qs):
+        """Effective template for a plan (project override → defaults → constant, {path}
+        filled); param-less returns the global default with {path} left literal."""
+        name = qs.get("project", [""])[0]
+        slug = qs.get("slug", [""])[0]
+        if not name or not slug:
+            return self._send_json(
+                {"template": core.default_instruction_template(self.registry_path)}
+            )
+        project = self._find_project(name)
+        if project is None:
+            return self._send_json({"error": "unknown project"}, 404)
+        try:
+            core.read_plan(project, slug)  # 400 on bad slug, 404 on missing plan
+        except ValueError as exc:
+            return self._send_json({"error": str(exc)}, 400)
+        except FileNotFoundError as exc:
+            return self._send_json({"error": str(exc)}, 404)
+        self._send_json({"template": core.resolve_instruction(project, slug, None)})
 
     def _api_projects(self):
         out = []
@@ -241,8 +257,12 @@ class Handler(BaseHTTPRequestHandler):
             pass  # client disconnected; the live queue is drained once (MVP)
 
 
-def run_server(port: int = 8765, registry: str | None = None) -> int:
-    projects = core.load_registry(registry)
+def run_server(port: int | None = None, registry: str | None = None) -> int:
+    config = core.load_registry(registry)
+    projects = config.projects
+    # Port resolution: code default → Config.port → --port flag (flag wins when given).
+    if port is None:
+        port = config.port
     reset = tracker.reset_stale_runs(projects)
     if reset:
         print(f"[docket] reset {len(reset)} stale run(s) to ready")

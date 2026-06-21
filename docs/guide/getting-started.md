@@ -29,11 +29,19 @@ uv sync
 uv run docket --help
 ```
 
-You should see a usage line listing the `tui` and `serve` subcommands.
+You should see a usage line listing the `tui`, `serve`, `init`, and `doctor` subcommands.
 
 ## 2. Tell docket about your repo
 
-docket finds your repos through a `projects.json` registry. Create one in the current directory:
+docket finds your repos through a `.docket.json` registry. Generate one instead of writing it by
+hand — `init` writes a complete file with every knob at its default:
+
+```bash
+uv run docket init                 # write ./.docket.json
+uv run docket init --scan ~/code   # also discover repos that have a planning/ dir under ~/code
+```
+
+Then open `.docket.json` and make sure `projects` lists your repo:
 
 ```json
 {
@@ -44,7 +52,7 @@ docket finds your repos through a `projects.json` registry. Create one in the cu
 ```
 
 Replace `path` with the absolute path (or `~`-path) to a repo that has a plan under
-`.agents_workspace/planning/`.
+`.agents_workspace/planning/`. Run `uv run docket doctor` to sanity-check the result.
 
 **Verify:** the path points at a real directory. docket refuses to start a project whose `path`
 is not a directory. Full field list and resolution order: [Configure the
@@ -70,7 +78,7 @@ uv run docket serve
 
 **Verify:** you see your project name with its plans listed underneath, each with a status badge.
 Every plan with no prior run shows **ready**. If you instead see "no projects — edit
-projects.json", docket didn't find your registry — see [Configure the
+.docket.json", docket didn't find your registry — see [Configure the
 registry](operations/configure-registry.md).
 
 ## 4. Implement your first plan

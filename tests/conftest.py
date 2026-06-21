@@ -11,13 +11,20 @@ from docket import core
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry_template(monkeypatch):
-    """Each test starts with the module-level registry template cleared and the
-    per-project lock table empty (locks are process-global)."""
-    monkeypatch.setattr(core, "REGISTRY_INSTRUCTION_TEMPLATE", None)
+def _reset_locks(monkeypatch):
+    """Each test starts with the per-project lock table empty (locks are
+    process-global) and no DOCKET_REGISTRY leaking in from the environment."""
     monkeypatch.setattr(core, "_locks", {})
     monkeypatch.setattr(core, "_locks_guard", core.threading.Lock())
     monkeypatch.delenv("DOCKET_REGISTRY", raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _claude_on_path(monkeypatch):
+    """Make the claude_bin preflight (run_implement / doctor) pass by default — CI has
+    no real `claude`. Tests of the 'not found' path override core.shutil.which."""
+    monkeypatch.setattr(core.shutil, "which", lambda b: f"/usr/bin/{b}")
     yield
 
 

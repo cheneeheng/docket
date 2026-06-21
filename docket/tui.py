@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from textual import work
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Header, Input, RichLog, Static, Tree
@@ -15,6 +16,14 @@ from textual.widgets import Footer, Header, Input, RichLog, Static, Tree
 from docket import core, tracker
 
 _BADGE = {"ready": "○", "running": "▶", "implemented": "●"}
+
+
+class PlanTree(Tree):
+    """Tree that frees `space` for batch-select. The stock Tree binds `space` to
+    `toggle_node` and consumes it, so the app-level binding never fires; remap it to
+    the app action instead."""
+
+    BINDINGS = [Binding("space", "app.toggle_select", "Select for batch", show=False)]
 
 
 class InstructionModal(ModalScreen[str | None]):
@@ -69,14 +78,14 @@ class DocketApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal():
-            yield Tree("docket", id="tree")
+            yield PlanTree("docket", id="tree")
             with Vertical():
                 yield Static("select a plan", id="plan-view", markup=False)
                 yield RichLog(id="log", highlight=False, markup=False, wrap=True)
         yield Footer()
 
     def on_mount(self) -> None:
-        self._projects = core.load_registry(self._registry_path)
+        self._projects = core.load_registry(self._registry_path).projects
         reset = tracker.reset_stale_runs(self._projects)
         if reset:
             self.query_one("#log", RichLog).write(
@@ -90,7 +99,7 @@ class DocketApp(App):
         tree = self.query_one("#tree", Tree)
         tree.clear()
         if not self._projects:
-            tree.root.add_leaf("no projects — edit projects.json")
+            tree.root.add_leaf("no projects — edit .docket.json")
             for path in core.registry_search_paths(self._registry_path):
                 tree.root.add_leaf(f"  searched: {path}")
             return
@@ -105,9 +114,12 @@ class DocketApp(App):
         mark = "✓ " if key in self._selected else "  "
         return f"{mark}{_BADGE.get(plan.status, '?')} {plan.title} [{plan.status}]"
 
-    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+    def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
+        # Track the cursor (not just Enter/click) so batch-select and the implement
+        # actions operate on the highlighted plan and the plan view follows it.
         data = event.node.data
         if not data:
+            self._current = None
             return
         self._current = data
         project = self._project(data[0])
@@ -161,13 +173,18 @@ class DocketApp(App):
             self._notify_log(f"[docket] {exc}")
 
     def action_toggle_select(self) -> None:
-        if not self._current:
+        node = self.query_one("#tree", Tree).cursor_node
+        if node is None or not node.data:
             return
-        if self._current in self._selected:
-            self._selected.discard(self._current)
+        key = node.data
+        if key in self._selected:
+            self._selected.discard(key)
         else:
-            self._selected.add(self._current)
-        self._reload_tree()
+            self._selected.add(key)
+        # Relabel just this node — a full reload would reset the cursor to the root,
+        # making multi-select unusable.
+        name, slug = key
+        node.set_label(self._plan_label(core.read_plan(self._project(name), slug), key))
 
     # --- headless run ---------------------------------------------------------
 
@@ -175,7 +192,7 @@ class DocketApp(App):
         if not self._current:
             return
         name, slug = self._current
-        default = core.resolve_instruction(slug, None)
+        default = core.resolve_instruction(self._project(name), slug, None)
 
         def go(instruction: str | None) -> None:
             if instruction is None:
@@ -189,7 +206,7 @@ class DocketApp(App):
             self._notify_log("[docket] nothing selected (space to select)")
             return
         items = [
-            (p, s, core.resolve_instruction(s, None))
+            (p, s, core.resolve_instruction(self._project(p), s, None))
             for (p, s) in sorted(self._selected)
         ]
         self._selected.clear()

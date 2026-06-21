@@ -5,6 +5,40 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-06-21
+
+Layered configuration. The flat `projects.json` registry is replaced by a three-layer
+`.docket.json` (top-level app settings · `defaults` · `projects[]`) merged per-knob into
+resolved projects, with `docket init` / `docket doctor` to scaffold and validate it.
+
+### Changed
+
+- **BREAKING — registry format and filename.** `projects.json` is replaced by `.docket.json`,
+  a three-layer registry (top-level app settings, `defaults`, `projects[]`) merged per-knob
+  (`CODE_DEFAULTS` → `defaults.<k>` → `project.<k>`) into resolved `Project` configs.
+  Resolution order is now `--registry PATH` → `$DOCKET_REGISTRY` → `./.docket.json` →
+  `~/.config/docket/.docket.json`. Migration: run `docket init --scan <dir>` to scaffold a new
+  `.docket.json`, or `docket init --merge` to add repos to an existing one.
+
+### Added
+
+- **`docket init`** — scan a directory to scaffold or refresh `.docket.json`; `--merge` adds
+  newly found repos in place without clobbering existing entries.
+- **`docket doctor`** — validate the resolved config and exit non-zero on any error.
+- **Published JSON schema** (`docket/schema/docket.schema.json`, referenced via `$schema`) for
+  editor validation of `.docket.json`.
+
+### Fixed
+
+- **Headless UTF-8 on non-UTF-8 locales** — the `claude -p` subprocess pipes are now pinned to
+  `encoding="utf-8", errors="replace"`, fixing `UnicodeEncode/DecodeError` on Windows (cp1252)
+  when writing the instruction's em-dash or reading Claude's stream-json output.
+- **TUI batch-select** — `space` now toggles batch selection (previously consumed by the
+  tree's expand/collapse), and selection follows the cursor instead of the last Enter/click, so
+  multi-select operates on the highlighted plan.
+
+[2.0.0]: https://github.com/cheneeheng/docket/releases/tag/v2.0.0
+
 ## [1.0.0] - 2026-06-20
 
 First stable release. docket is a local, single-user command-center over many Claude Code

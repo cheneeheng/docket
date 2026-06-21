@@ -90,3 +90,42 @@ No behaviour change to docket; removes the framework-internal collision.
 **Impact / Risk:** None — purely an internal rename. Enables the TUI to be driven under the
 Textual test harness.
 **Outcome:** tui.py at 100% coverage; clean app teardown.
+
+### Entry 6
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-06-20T00:00:00Z
+**Task:** Implement v2 plans (ITER_01_v2 config layering, ITER_02_v2 init/doctor/schema).
+
+**Context:** `discover_repos` in ITER_02_v2 §04 derives the project name from `repo.name`
+(unresolved). When `docket init --scan .` is run, the discovered repo at the scan root is
+`Path(".")`, whose `.name` is `""` — an empty name that `load_registry` then rejects as
+"missing 'name'". The plan also builds the `~`-relative path with `f"~/{p.relative_to(home)}"`,
+which on Windows stringifies with backslashes.
+**Decision:** Resolve the repo path first and take the name from the resolved path
+(`p.name`), and emit the `~`-relative path with `.as_posix()`. For the normal `--scan ~/code`
+case the names are identical to the plan's; only the degenerate "." root and the path separators
+change. Strictly more robust, never worse; keeps generated configs portable and valid.
+**Impact / Risk:** None negative. `init --scan .` now yields a valid non-empty name and
+forward-slash paths.
+**Outcome:** Verified via `docket init --scan . --dry-run`.
+
+### Entry 7
+
+**Type:** Decision
+**Mode:** Autonomous
+**Timestamp:** 2026-06-20T00:00:00Z
+**Task:** "CI updated accordingly" (part of the v2 goal).
+
+**Context:** The goal asked for CI to be updated for the v2 work but did not specify how.
+`docket doctor` is positioned in ITER_02_v2 §04 as a CI gate, but its `claude_bin` PATH check
+and per-project path checks fail in CI (no `claude`, project paths are local). Making it a hard
+gate would red-X every CI run.
+**Decision:** Keep the existing lint + test(100% coverage) jobs and add a single packaging
+smoke step `uv run docket init --dry-run` to the test job. It exercises `_schema_path()` /
+`importlib.resources` resolution of the shipped schema end to end — the real packaging risk that
+unit tests (which may patch the path) can miss — and exits 0 without needing `claude`.
+**Impact / Risk:** Minimal; one extra fast step. Did not wire `docket doctor` into CI for the
+reason above.
+**Outcome:** CI stays green; packaging of the schema asset is smoke-tested.

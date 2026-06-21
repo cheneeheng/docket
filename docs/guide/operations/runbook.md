@@ -40,8 +40,8 @@ uv run docket tui
 ### Point either frontend at a specific registry
 
 ```bash
-uv run docket serve --registry /path/to/projects.json
-uv run docket tui   --registry /path/to/projects.json
+uv run docket serve --registry /path/to/.docket.json
+uv run docket tui   --registry /path/to/.docket.json
 ```
 
 See [Configure the registry](configure-registry.md) for resolution order.
@@ -124,11 +124,11 @@ uv run docket serve --port 8766
    one:
 
    ```bash
-   uv run docket serve --registry ./projects.json
+   uv run docket serve --registry ./.docket.json
    ```
 
 2. Confirm the file resolved is the one you edited (first match wins across `--registry` →
-   `$DOCKET_REGISTRY` → `./projects.json` → `~/.config/docket/projects.json`).
+   `$DOCKET_REGISTRY` → `./.docket.json` → `~/.config/docket/.docket.json`).
 
 See [Configure the registry](configure-registry.md) for field-level errors.
 

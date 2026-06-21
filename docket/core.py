@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.resources
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 import uuid
@@ -23,18 +25,35 @@ DEFAULT_ALLOWED_TOOLS = [
     "Bash(npm run test:*)",
 ]
 
-# {path} is filled with the plan's repo-relative path: .agents_workspace/planning/<slug>.md
+# {path} is filled with the plan's repo-relative path: <planning_dir>/<slug>.md
 DEFAULT_INSTRUCTION_TEMPLATE = (
     "Read the plan at {path} and implement it fully. The plan may reference sibling "
     "files (e.g. a SKELETON or earlier iterations) — read those as needed. Make the "
     "code changes the plan describes."
 )
 
-PLANNING_DIR = ".agents_workspace/planning"
-IMPL_DIR = ".agents_workspace/implementation"
+DEFAULT_PORT = 8765
+DEFAULT_MAX_TURNS = 30
+DEFAULT_PERMISSION_MODE = "acceptEdits"
+# The Claude Code permission modes; kept in sync with the schema enum + cmd_doctor.
+PERMISSION_MODES = ("acceptEdits", "default", "plan", "bypassPermissions")
+DEFAULT_PLANNING_DIR = ".agents_workspace/planning"
+DEFAULT_IMPL_DIR = ".agents_workspace/implementation"
+DEFAULT_CLAUDE_BIN = "claude"
+DEFAULT_CLAUDE_EXTRA: list[str] = []
 
-# Set by load_registry; the optional top-level "instruction_template" from projects.json.
-REGISTRY_INSTRUCTION_TEMPLATE: str | None = None
+# The bottom layer of the per-knob resolution cascade: code constant -> defaults -> project.
+CODE_DEFAULTS = {
+    "allowed_tools": DEFAULT_ALLOWED_TOOLS,
+    "instruction_template": DEFAULT_INSTRUCTION_TEMPLATE,
+    "model": None,
+    "max_turns": DEFAULT_MAX_TURNS,
+    "permission_mode": DEFAULT_PERMISSION_MODE,
+    "planning_dir": DEFAULT_PLANNING_DIR,
+    "implementation_dir": DEFAULT_IMPL_DIR,
+    "claude_bin": DEFAULT_CLAUDE_BIN,
+    "claude_extra_args": DEFAULT_CLAUDE_EXTRA,
+}
 
 _SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -46,8 +65,20 @@ class Project:
     allowed_tools: list[str] = field(
         default_factory=lambda: list(DEFAULT_ALLOWED_TOOLS)
     )
+    instruction_template: str = DEFAULT_INSTRUCTION_TEMPLATE
     model: str | None = None
-    max_turns: int = 30
+    max_turns: int = DEFAULT_MAX_TURNS
+    permission_mode: str = DEFAULT_PERMISSION_MODE
+    planning_dir: str = DEFAULT_PLANNING_DIR
+    implementation_dir: str = DEFAULT_IMPL_DIR
+    claude_bin: str = DEFAULT_CLAUDE_BIN
+    claude_extra_args: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Config:
+    port: int
+    projects: list[Project]
 
 
 @dataclass
@@ -77,14 +108,14 @@ def safe_slug(slug: str) -> str:
 
 
 def _registry_search_paths(path: str | None) -> list[Path]:
-    """First match wins: --registry → $DOCKET_REGISTRY → ./projects.json → ~/.config."""
+    """First match wins: --registry → $DOCKET_REGISTRY → ./.docket.json → ~/.config."""
     candidates: list[str] = []
     if path:
         candidates.append(path)
     if os.environ.get("DOCKET_REGISTRY"):
         candidates.append(os.environ["DOCKET_REGISTRY"])
-    candidates.append("./projects.json")
-    candidates.append("~/.config/docket/projects.json")
+    candidates.append("./.docket.json")
+    candidates.append("~/.config/docket/.docket.json")
     return [Path(os.path.expanduser(c)) for c in candidates]
 
 
@@ -93,12 +124,16 @@ def registry_search_paths(path: str | None = None) -> list[str]:
     return [str(p) for p in _registry_search_paths(path)]
 
 
-def load_registry(path: str | None = None) -> list[Project]:
-    """Resolve and load projects.json. No registry found -> [] (empty state, not error)."""
-    global REGISTRY_INSTRUCTION_TEMPLATE
+def load_registry(path: str | None = None) -> Config:
+    """Resolve and load .docket.json, merging the three config layers into a Config.
+
+    Per-knob cascade (lowest → highest): CODE_DEFAULTS → defaults.<key> → project.<key>.
+    No registry found -> Config(DEFAULT_PORT, []) (empty state, not an error). Not cached:
+    resolve fresh each call so a changed --registry / $DOCKET_REGISTRY is picked up.
+    """
     found = next((p for p in _registry_search_paths(path) if p.is_file()), None)
     if found is None:
-        return []
+        return Config(port=DEFAULT_PORT, projects=[])
 
     with open(found, encoding="utf-8") as fh:
         data = json.load(fh)
@@ -106,7 +141,13 @@ def load_registry(path: str | None = None) -> list[Project]:
     if not isinstance(data, dict) or not isinstance(data.get("projects"), list):
         raise ValueError(f'{found}: expected top-level shape {{"projects": [...]}}')
 
-    REGISTRY_INSTRUCTION_TEMPLATE = data.get("instruction_template") or None
+    defaults = dict(data.get("defaults", {}))
+    # Lenient v1 carry-over: a top-level instruction_template seeds defaults if absent.
+    if "instruction_template" in data and "instruction_template" not in defaults:
+        defaults["instruction_template"] = data["instruction_template"]
+
+    def pick(raw: dict, key: str):
+        return raw.get(key, defaults.get(key, CODE_DEFAULTS[key]))
 
     projects: list[Project] = []
     seen: set[str] = set()
@@ -121,7 +162,7 @@ def load_registry(path: str | None = None) -> list[Project]:
         raw_path = entry.get("path")
         if not raw_path:
             raise ValueError(f"{found}: project {name!r} is missing 'path'")
-        abspath = os.path.abspath(os.path.expanduser(raw_path))
+        abspath = os.path.abspath(os.path.expanduser(os.path.expandvars(raw_path)))
         if not os.path.isdir(abspath):
             raise ValueError(
                 f"{found}: project {name!r} path is not a directory: {abspath}"
@@ -131,16 +172,22 @@ def load_registry(path: str | None = None) -> list[Project]:
             Project(
                 name=name,
                 path=abspath,
-                allowed_tools=entry.get("allowed_tools") or list(DEFAULT_ALLOWED_TOOLS),
-                model=entry.get("model"),
-                max_turns=entry.get("max_turns", 30),
+                allowed_tools=pick(entry, "allowed_tools"),
+                instruction_template=pick(entry, "instruction_template"),
+                model=pick(entry, "model"),
+                max_turns=pick(entry, "max_turns"),
+                permission_mode=pick(entry, "permission_mode"),
+                planning_dir=pick(entry, "planning_dir"),
+                implementation_dir=pick(entry, "implementation_dir"),
+                claude_bin=pick(entry, "claude_bin"),
+                claude_extra_args=list(pick(entry, "claude_extra_args")),
             )
         )
-    return projects
+    return Config(port=data.get("port", DEFAULT_PORT), projects=projects)
 
 
 def _planning_root(project: Project) -> Path:
-    return Path(project.path) / ".agents_workspace" / "planning"
+    return Path(project.path) / project.planning_dir
 
 
 def list_plans(project: Project) -> list[Plan]:
@@ -190,11 +237,164 @@ def read_plan(project: Project, slug: str) -> Plan:
 def manual_command(project: Project, slug: str) -> str:
     """Copy-pasteable command for running the plan yourself (feeds the plan body)."""
     slug = safe_slug(slug)
-    plan_rel = f"{PLANNING_DIR}/{slug}.md"
+    plan_rel = f"{project.planning_dir}/{slug}.md"
     return (
         f"cd {project.path} && claude -p < {plan_rel}\n"
         f"# or: cd {project.path} && claude   (then paste / @-mention the plan file)"
     )
+
+
+# --- Config authoring: init / doctor (ITER_02_v2) -----------------------------
+
+
+def _schema_path() -> str:
+    """Absolute path to the shipped JSON Schema, for the .docket.json $schema pointer."""
+    res = importlib.resources.files("docket") / "schema" / "docket.schema.json"
+    return str(Path(str(res)).resolve())
+
+
+def _suffix(name: str) -> str:
+    """foo -> foo-2, foo-2 -> foo-3, ... — deterministic name-collision disambiguation."""
+    base, _, n = name.rpartition("-")
+    return f"{base}-{int(n) + 1}" if base and n.isdigit() else f"{name}-2"
+
+
+def discover_repos(root: str) -> list[dict]:
+    """Find git repos under ROOT that contain the default planning dir → [{name, path}].
+
+    Names are deduped deterministically; paths are ~-relative when under $HOME for
+    portability, else absolute. Discovered entries carry only name + path (rest inherits
+    defaults). Sorted by name.
+    """
+    base = Path(root).expanduser()
+    home = Path.home()
+    found: list[dict] = []
+    names: set[str] = set()
+    for git in base.rglob(".git"):
+        repo = git.parent
+        if not (repo / DEFAULT_PLANNING_DIR).is_dir():
+            continue
+        # Resolve first so the name is the real dir name even when root is "." (whose
+        # unresolved .name is "") and so the path is portable (posix-separated under $HOME).
+        p = repo.resolve()
+        name = p.name
+        while name in names:
+            name = _suffix(name)
+        names.add(name)
+        disp = (
+            f"~/{p.relative_to(home).as_posix()}" if p.is_relative_to(home) else str(p)
+        )
+        found.append({"name": name, "path": disp})
+    return sorted(found, key=lambda e: e["name"])
+
+
+def _default_config(discovered: list[dict]) -> dict:
+    """A complete, valid config with every key at its default (the fresh-init body)."""
+    return {
+        "$schema": _schema_path(),
+        "port": DEFAULT_PORT,
+        "defaults": {
+            "allowed_tools": DEFAULT_ALLOWED_TOOLS,
+            "instruction_template": DEFAULT_INSTRUCTION_TEMPLATE,
+            "model": None,
+            "max_turns": DEFAULT_MAX_TURNS,
+            "permission_mode": DEFAULT_PERMISSION_MODE,
+            "planning_dir": DEFAULT_PLANNING_DIR,
+            "implementation_dir": DEFAULT_IMPL_DIR,
+            "claude_bin": DEFAULT_CLAUDE_BIN,
+            "claude_extra_args": DEFAULT_CLAUDE_EXTRA,
+        },
+        "projects": discovered,
+    }
+
+
+def cmd_init(
+    output: str = ".docket.json",
+    scan: str | None = None,
+    force: bool = False,
+    merge: bool = False,
+    dry_run: bool = False,
+) -> str:
+    """Generate a fresh .docket.json or (--merge) add only newly-found repos in place.
+
+    Returns a one-line summary. Raises FileExistsError (no-clobber) / FileNotFoundError
+    (--merge needs an existing target).
+    """
+    target = Path(output)
+    discovered = discover_repos(scan) if scan else []
+
+    if merge:  # update in place, preserve hand edits
+        if not target.exists():
+            raise FileNotFoundError(
+                f"{target} does not exist — run a plain `init` first"
+            )
+        config = json.loads(target.read_text(encoding="utf-8"))
+        existing = config.setdefault("projects", [])
+        have_paths = {p.get("path") for p in existing}
+        have_names = {p.get("name") for p in existing}
+        added = 0
+        for repo in discovered:  # add only genuinely new repos
+            if repo["path"] in have_paths:
+                continue
+            name = repo["name"]
+            while name in have_names:  # keep names unique against existing
+                name = _suffix(name)
+            existing.append({"name": name, "path": repo["path"]})
+            have_paths.add(repo["path"])
+            have_names.add(name)
+            added += 1
+        existing.sort(key=lambda e: e["name"])
+        verb = "would add" if dry_run else "added"
+        summary = f"{verb} {added} new project(s) to {target}"
+    else:  # fresh file
+        if target.exists() and not force and not dry_run:
+            raise FileExistsError(
+                f"{target} exists — pass --force to overwrite or --merge to update"
+            )
+        config = _default_config(discovered)
+        verb = "would write" if dry_run else "wrote"
+        summary = f"{verb} {target} ({len(discovered)} project(s))"
+
+    rendered = json.dumps(config, indent=2) + "\n"
+    if dry_run:
+        print(rendered)
+        return summary
+    tmp = target.with_suffix(target.suffix + ".tmp")  # atomic write (sidecar pattern)
+    tmp.write_text(rendered, encoding="utf-8")
+    os.replace(tmp, target)
+    return summary
+
+
+def cmd_doctor(registry: str | None = None) -> int:
+    """Load the registry and report config problems; return 1 on any error-level finding."""
+    try:
+        cfg = load_registry(registry)
+    except (ValueError, OSError) as exc:
+        print(f"error: {exc}")
+        return 1
+    errors = warns = 0
+    if not cfg.projects:
+        print("warn: no projects configured")
+        warns += 1
+    for pr in cfg.projects:  # paths/dupes already validated by load_registry
+        plan_dir = Path(pr.path) / pr.planning_dir
+        if not plan_dir.is_dir():
+            print(f"warn: {pr.name}: no planning dir at {plan_dir}")
+            warns += 1
+        if pr.permission_mode not in PERMISSION_MODES:
+            print(f"error: {pr.name}: unknown permission_mode {pr.permission_mode!r}")
+            errors += 1
+        if not pr.allowed_tools:
+            print(
+                f"warn: {pr.name}: allowed_tools is empty — every tool will be denied"
+            )
+            warns += 1
+        bin_ = os.path.expandvars(os.path.expanduser(pr.claude_bin))
+        if shutil.which(bin_) is None and not os.path.isfile(bin_):
+            print(f"error: {pr.name}: claude_bin {pr.claude_bin!r} not found on PATH")
+            errors += 1
+    print(f"{len(cfg.projects)} project(s): {errors} error(s), {warns} warning(s)")
+    return 1 if errors else 0
 
 
 # --- Headless run (ITER_03) ---------------------------------------------------
@@ -209,11 +409,32 @@ def project_lock(path: str) -> threading.Lock:
         return _locks.setdefault(path, threading.Lock())
 
 
-def resolve_instruction(slug: str, override: str | None) -> str:
-    """Build the stdin instruction that names the plan file. {path} is substituted."""
+def default_instruction_template(path: str | None = None) -> str:
+    """The global default template (defaults-layer value or the code constant), {path}
+    left literal — for the param-less /api/instruction-template pre-fill."""
+    found = next((p for p in _registry_search_paths(path) if p.is_file()), None)
+    if found is None:
+        return DEFAULT_INSTRUCTION_TEMPLATE
+    data = json.loads(Path(found).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return DEFAULT_INSTRUCTION_TEMPLATE
+    defaults = data.get("defaults", {})
+    template = (
+        defaults.get("instruction_template") if isinstance(defaults, dict) else None
+    )
+    # v1 carry-over: a top-level instruction_template stands in for the defaults layer.
+    return template or data.get("instruction_template") or DEFAULT_INSTRUCTION_TEMPLATE
+
+
+def resolve_instruction(project: Project, slug: str, override: str | None) -> str:
+    """Build the stdin instruction that names the plan file. {path} is substituted.
+
+    Template precedence: per-plan override → the resolved project.instruction_template
+    (which already encodes defaults → code constant from load_registry's cascade).
+    """
     slug = safe_slug(slug)
-    path = f"{PLANNING_DIR}/{slug}.md"
-    template = override or REGISTRY_INSTRUCTION_TEMPLATE or DEFAULT_INSTRUCTION_TEMPLATE
+    path = f"{project.planning_dir}/{slug}.md"
+    template = override or project.instruction_template
     if "{path}" in template:
         return template.format(path=path)
     return template
@@ -277,6 +498,12 @@ def run_implement(
     if rec["status"] not in ("ready", "implemented"):
         raise ValueError(f"{project.name}/{slug} is '{rec['status']}', not runnable")
 
+    # Preflight the binary BEFORE flipping status / taking the lock — a bad claude_bin
+    # must not strand the plan as 'running' or hold the project lock.
+    bin_ = os.path.expandvars(os.path.expanduser(project.claude_bin))
+    if shutil.which(bin_) is None and not os.path.isfile(bin_):
+        raise FileNotFoundError(f"claude_bin {project.claude_bin!r} not found on PATH")
+
     lock = project_lock(project.path)
     if not lock.acquire(blocking=False):
         raise RuntimeError("a run is already active for this project")
@@ -284,13 +511,13 @@ def run_implement(
         tracker.set_status(project, slug, "running", trigger="headless", run_id=run_id)
         allow = ",".join(project.allowed_tools)
         cmd = [
-            "claude",
+            bin_,
             "-p",
             "--output-format",
             "stream-json",
             "--verbose",
             "--permission-mode",
-            "acceptEdits",
+            project.permission_mode,
             "--max-turns",
             str(project.max_turns),
             "--allowedTools",
@@ -298,6 +525,7 @@ def run_implement(
         ]
         if project.model:
             cmd += ["--model", project.model]
+        cmd += project.claude_extra_args  # additive escape hatch, appended last
 
         proc = subprocess.Popen(
             cmd,
@@ -306,6 +534,8 @@ def run_implement(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
         )
         if on_spawn:
@@ -378,7 +608,7 @@ class RunManager:
                 raise ValueError(
                     f"{project.name}/{slug} is '{rec['status']}', not runnable"
                 )
-            instruction = resolve_instruction(slug, item.get("instruction"))
+            instruction = resolve_instruction(project, slug, item.get("instruction"))
             validated.append((project, slug, instruction))
 
         runs: list[Run] = []

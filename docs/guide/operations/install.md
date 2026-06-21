@@ -66,7 +66,7 @@ docket --help
 
    **Verify:** the console prints `serving on http://127.0.0.1:8765`. Because the registry is
    empty, it also prints `no projects — searched:` followed by the registry search paths. Open
-   <http://127.0.0.1:8765> and confirm the page loads with a "no projects — edit projects.json"
+   <http://127.0.0.1:8765> and confirm the page loads with a "no projects — edit .docket.json"
    message. Press **Ctrl-C** to stop; the console prints `shutting down`.
 
 Next: [Configure the registry](configure-registry.md) to point docket at real repos.
